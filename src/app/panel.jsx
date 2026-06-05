@@ -250,8 +250,12 @@ export default function App() {
       try{ const r=await fetch(url); const d=await r.json(); if(d?.Listado) listado=d.Listado; }catch{}
       if (listado) {
         const filtradas = listado.filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); });
-        setLics(procesarRaw(filtradas,[...activeEsps],suc.region,suc.espsFilter));
-        setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo");
+        const mapped = filtradas
+          .filter(l => isRel(l.Nombre||"", [...activeEsps]))
+          .map(l => ({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:null, monto:null, pub:null, preg:null }))
+          .sort((a,b) => new Date(a.cierre)-new Date(b.cierre));
+        setLics(mapped);
+        setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo · "+mapped.length+" licitaciones");
         setPage(1);
       } else { setApiErr("No se pudo conectar a la API. Escribe 'actualiza licitaciones' en el chat."); }
     } catch(e){ setApiErr("Error: "+e.message); }
