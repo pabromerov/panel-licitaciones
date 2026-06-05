@@ -413,7 +413,7 @@ export default function App() {
     if (filtroFecha==="todas") return arr;
     const now=new Date(); const y=now.getFullYear(); const m=now.getMonth();
     return arr.filter(l=>{
-      if(!l.pub) return filtroFecha==="todas";
+      if(!l.pub) return true; // sin fecha de publicación conocida, incluir siempre
       const p=new Date(l.pub);
       if(filtroFecha==="mes_actual")   return p.getFullYear()===y&&p.getMonth()===m;
       if(filtroFecha==="mes_anterior") { const pm=m===0?11:m-1; const py=m===0?y-1:y; return p.getFullYear()===py&&p.getMonth()===pm; }
@@ -573,7 +573,7 @@ export default function App() {
                 </div>
 
                 {licsFiltered.length===0
-                  ? <div style={{textAlign:"center",padding:"2rem",color:"var(--color-text-tertiary)",fontSize:13}}>Sin licitaciones para este filtro</div>
+                  ? <div style={{textAlign:"center",padding:"2rem",color:"var(--color-text-tertiary)",fontSize:13}}>{filtro!=="todos"&&Object.keys(apiRaw).length===0?"Los filtros por estado (adjudicada, desierta, cerrada) requieren datos de la API en vivo. Presiona \"↺ Actualizar API\".":"Sin licitaciones para este filtro"}</div>
                   : <>
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
                       {licsPaged.map(lic=>{
