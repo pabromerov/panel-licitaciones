@@ -85,9 +85,95 @@ const procesarRaw = (raw, activeArr, sucRegion, espsFilter) => raw
   .map(l => ({ id:l.id||l.CodigoExterno, nombre:l.nombre||l.Nombre, estado:getEstado(l.cod||l.CodigoEstado, l.cierre||l.FechaCierre), cierre:l.cierre||l.FechaCierre, tipo:getTipo(l.id||l.CodigoExterno), esps:getEsps(l.nombre||l.Nombre||""), org:l.org||null, region:l.region||null, monto:l.monto||null, pub:l.pub||null, preg:l.preg||null }))
   .sort((a,b) => new Date(a.cierre)-new Date(b.cierre));
 
-const exportCSV = (rows,cols,fname) => {
-  const csv=[cols.map(c=>c.l),...rows.map(r=>cols.map(c=>`"${(r[c.k]??"").toString().replace(/"/g,"'")}"`))].map(r=>r.join(",")).join("\n");
-  const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv); a.download=fname; a.click();
+const exportXLSX = async (rows, tipo, suc) => {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const UTM = 68000;
+  const fmt = n => n ? "$ "+Number(n).toLocaleString("es-CL") : "Ver bases";
+  const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
+  const dias = f => f?Math.ceil((new Date((f||"").replace("T"," ").split(".")[0])-new Date())/86400000):null;
+
+  // ── Hoja 1: Licitaciones ──────────────────────────────────────────────
+  const licHdrs = ["N°","ID Licitación","Nombre Licitación","Organismo","Especialidades","Tipo","Estado","F. Publicación","F. Cierre","Días Restantes","Monto Estimado","Sucursal","Estado Gestión","Responsable","F. Postulación","Monto Ofertado","Observaciones"];
+  const licData = rows.map((l,i)=>[
+    i+1, l.id, l.nombre, l.org||"—", (l.esps||[]).join(", "),
+    l.tipo, l.estado==="publicada"?"Publicada":l.estado==="por_vencer"?"Por vencer":l.estado==="adjudicada"?"Adjudicada":l.estado==="desierta"?"Desierta":"Cerrada",
+    fmtD(l.pub), fmtD(l.cierre),
+    (()=>{const d=dias(l.cierre); return d!==null&&d>0?d+"d":d===0?"Hoy":"Cerrada";})(),
+    l.monto||"Ver bases", suc?.nombre||"—", "", "", "", "", ""
+  ]);
+
+  const licWs = XLSX.utils.aoa_to_sheet([licHdrs,...licData]);
+
+  // Anchos de columna
+  licWs["!cols"] = [
+    {wch:4},{wch:20},{wch:50},{wch:36},{wch:22},{wch:6},{wch:14},
+    {wch:12},{wch:12},{wch:10},{wch:18},{wch:22},{wch:16},{wch:14},{wch:14},{wch:16},{wch:30}
+  ];
+
+  // Estilo encabezados (SheetJS Community no soporta estilos, usamos sufijo .xlsx con datos ricos)
+  XLSX.utils.book_append_sheet(wb, licWs, "Licitaciones");
+
+  // ── Hoja 2: Resumen por especialidad ──────────────────────────────────
+  const espData = Object.keys(ESPS)
+    .map(k=>([ESPS[k].icon+" "+k, rows.filter(l=>l.esps?.includes(k)).length,
+              fmt(rows.filter(l=>l.esps?.includes(k)).reduce((s,l)=>s+(l.monto||0),0))]))
+    .filter(r=>r[1]>0).sort((a,b)=>b[1]-a[1]);
+
+  const resHdrs = ["Especialidad","N° Licitaciones","Monto Total Estimado"];
+  const totales = ["TOTAL", rows.length, fmt(rows.reduce((s,l)=>s+(l.monto||0),0))];
+  const resWs = XLSX.utils.aoa_to_sheet([
+    [`Panel Licitaciones SanaSalud — ${suc?.nombre||""} — ${new Date().toLocaleDateString("es-CL")}`],
+    [],
+    resHdrs,
+    ...espData,
+    [],
+    totales,
+  ]);
+  resWs["!cols"] = [{wch:28},{wch:16},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, resWs, "Resumen por Especialidad");
+
+  // ── Hoja 3: Por estado ────────────────────────────────────────────────
+  const estados = {
+    "Publicadas":  rows.filter(l=>l.estado==="publicada"),
+    "Por vencer":  rows.filter(l=>l.estado==="por_vencer"),
+    "Adjudicadas": rows.filter(l=>l.estado==="adjudicada"),
+    "Desiertas":   rows.filter(l=>l.estado==="desierta"),
+    "Cerradas":    rows.filter(l=>l.estado==="cerrada"),
+  };
+  const estHdrs = ["Estado","Cantidad","Monto Total Estimado","% del Total"];
+  const estData = Object.entries(estados).map(([k,v])=>[
+    k, v.length,
+    fmt(v.reduce((s,l)=>s+(l.monto||0),0)),
+    rows.length>0?((v.length/rows.length)*100).toFixed(1)+"%":"0%"
+  ]);
+  const estWs = XLSX.utils.aoa_to_sheet([estHdrs,...estData]);
+  estWs["!cols"] = [{wch:16},{wch:10},{wch:22},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, estWs, "Por Estado");
+
+  // ── Hoja 4: Por vencer (urgentes) ────────────────────────────────────
+  const urgentes = rows.filter(l=>l.estado==="publicada"||l.estado==="por_vencer")
+    .sort((a,b)=>new Date(a.cierre)-new Date(b.cierre));
+  const urgHdrs = ["ID","Nombre","Organismo","Especialidades","Cierre","Días Restantes","Monto","Estado Gestión"];
+  const urgData = urgentes.map(l=>[
+    l.id, l.nombre, l.org||"—", (l.esps||[]).join(", "),
+    fmtD(l.cierre),
+    (()=>{const d=dias(l.cierre); return d!==null&&d>0?d:0;})(),
+    l.monto||"Ver bases", ""
+  ]);
+  const urgWs = XLSX.utils.aoa_to_sheet([
+    ["⚠ LICITACIONES VIGENTES — ORDENADAS POR URGENCIA"],
+    [`Sucursal: ${suc?.nombre||""} | Generado: ${new Date().toLocaleDateString("es-CL")}`],
+    [],
+    urgHdrs,
+    ...urgData
+  ]);
+  urgWs["!cols"] = [{wch:20},{wch:50},{wch:36},{wch:22},{wch:12},{wch:12},{wch:18},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, urgWs, "Urgentes");
+
+  // Descargar
+  const fname = `Licitaciones_SanaSalud_${suc?.nombre?.replace(/\s/g,"_")||"Panel"}_${new Date().toISOString().split("T")[0]}.xlsx`;
+  XLSX.writeFile(wb, fname);
 };
 
 // SNAPSHOT actualizado el 05/06/2026 desde API Mercado Público (152 licitaciones activas)
@@ -412,7 +498,7 @@ export default function App() {
                 <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{lastFetch} · {lics.length} licitaciones</span>
                 <button onClick={actualizarDesdeAPI} disabled={loading} style={{display:"flex",alignItems:"center",gap:5,background:"#185FA5",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:loading?"wait":"pointer",color:"#fff",fontWeight:500}}>{loading?"Actualizando…":"↺ Actualizar API"}</button>
                 <button onClick={()=>setShowEsps(!showEsps)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>🔍 Especialidades ({activeEsps.size})</button>
-                <button onClick={()=>exportCSV(licsFiltered,[{k:"id",l:"ID"},{k:"nombre",l:"Nombre"},{k:"org",l:"Organismo"},{k:"estado",l:"Estado"},{k:"monto",l:"Monto"},{k:"pub",l:"Publicación"},{k:"cierre",l:"Cierre"}],"licitaciones.csv")} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>⬇ CSV</button>
+                <button onClick={()=>exportXLSX(licsFiltered,"licitaciones",suc)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
               </div>
             </div>
 
@@ -547,7 +633,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <button onClick={()=>exportCSV(casFiltered,[{k:"id",l:"ID"},{k:"nombre",l:"Nombre"},{k:"organismo",l:"Organismo"},{k:"monto",l:"Monto"},{k:"cierre",l:"Cierre"},{k:"estado",l:"Estado"}],"compras_agiles.csv")} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>⬇ CSV</button>
+              <button onClick={()=>exportXLSX(casFiltered,"compras_agiles",suc)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
             </div>
             <div style={{marginBottom:12,padding:"9px 14px",background:"#FAEEDA",borderRadius:8,fontSize:12,color:"#854F0B",fontWeight:500}}>⚡ Hasta 30 UTM (~$2M CLP) · Sin bases formales · Cotización directa</div>
             <div style={{display:"flex",gap:6,marginBottom:14}}>{[["todos","Todas"],["publicada","Abiertas"],["adjudicada","Adjudicadas"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={fBtn(filtro===k)}>{l}</button>)}</div>
@@ -586,7 +672,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <button onClick={()=>exportCSV(misP.map(([,v])=>v),[{k:"nombre",l:"Nombre"},{k:"org",l:"Organismo"},{k:"tipo",l:"Tipo"},{k:"monto",l:"Monto"},{k:"cierre",l:"Cierre"},{k:"estado",l:"Estado"},{k:"fecha",l:"Registrado"},{k:"notas",l:"Notas"}],"participaciones.csv")} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>⬇ CSV</button>
+              <button onClick={()=>exportXLSX(misP.map(([,v])=>v),"participaciones",suc)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
             </div>
             {misP.length===0
               ?<div style={{textAlign:"center",padding:"3rem 0",color:"var(--color-text-tertiary)",fontSize:13}}><div style={{fontSize:32,marginBottom:12}}>📋</div>Sin participaciones para {suc.nombre}.<br/>Usa "+ Registrar" en cualquier licitación.</div>
