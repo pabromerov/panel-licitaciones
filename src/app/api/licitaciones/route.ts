@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   } else {
     url += `&estado=activas`;
     if (region && REGION_CODES[region]) {
-      url += `&codigo_region=${REGION_CODES[region]}`;
+      url += `&region=${REGION_CODES[region]}`;
     }
   }
 
