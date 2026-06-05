@@ -75,7 +75,11 @@ const PAGE_SIZE = 30;
 const procesarRaw = (raw, activeArr, sucRegion, espsFilter) => raw
   .filter(l => {
     if (!isRel(l.nombre||l.Nombre||"", activeArr)) return false;
-    if (!regionOk(l.region, sucRegion)) return false;
+    // Si la región ya está normalizada (viene de la API), comparar directo; si es texto largo, usar regionOk
+    const lr = l.region;
+    if (!lr) return false;
+    const regionMatch = lr === sucRegion || regionOk(lr, sucRegion);
+    if (!regionMatch) return false;
     if (espsFilter) {
       const esps = getEsps(l.nombre||l.Nombre||"");
       if (!esps.some(e => espsFilter.includes(e))) return false;
