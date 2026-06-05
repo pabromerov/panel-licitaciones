@@ -239,13 +239,13 @@ export default function App() {
   const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await window.storage.set("ss:ticket",c); }catch{} };
 
   const actualizarDesdeAPI = async () => {
-    if (!ticket) { setApiErr("Ingresa el ticket de API primero"); return; }
+    // ticket manejado por el servidor
     setLoading(true); setApiErr(null);
     const T=["ecografía","ecografia","ecotomografía","ecotomografia","transvaginal","doppler","scanner","tomografía","tomografia","mamografía","mamografia","radiografía","radiografia","telerradiología","resonancia magnética","resonancia magnetica","ecocardiograma","holter","electrocardiograma","arritmia","cardiovascular","test de esfuerzo","ergometría","otorrinolaringología","otorrino","audiometría","audiometria","impedanciometría","audífono","hipoacusia","neurología","neurologia","neurofisiología","electroencefalograma","electromiografía","espirometría","espirometria","función pulmonar","óxido nítrico","urodinamia","cistoscopía","uroflujometría","medicina general","consultas médicas","fonasa","telemedicina","prestaciones de salud","servicio dental","atención dental","endodoncia","cirujano dentista","servicio odontológico","kinesiología","kinesiologia","rehabilitación","rehabilitacion","fisioterapia","fonoaudiología","laboratorio clínico","hemograma","bioquímica","microbiología","anatomía patológica","imágenes diagnósticas","imagenes diagnosticas","imagenología","imagenologia","programa imágenes"];
     const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
-      const url = `/api/licitaciones?estado=activas&ticket=${ticket}`;
+      const url = '/api/licitaciones';
       let listado = null;
       try{ const r=await fetch(url); const d=await r.json(); if(d?.Listado) listado=d.Listado; }catch{}
       if (listado) {
@@ -264,7 +264,7 @@ export default function App() {
 
   const fetchDetalle = async id => {
     if(detData[id]||!ticket) return; setLoadDet(true);
-    const url=`/api/licitaciones?codigo=${id}&ticket=${ticket}`;
+    const url=`/api/licitaciones?codigo=${id}`;
     let item=null;
     try{ const r=await fetch(url); const d=await r.json(); item=d?.Listado?.[0]; }catch{}
     if(item) setDetData(p=>({...p,[id]:item}));
