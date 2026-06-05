@@ -295,6 +295,7 @@ export default function App() {
   const [apiErr,     setApiErr]     = useState(null);
   const [lastFetch,  setLastFetch]  = useState("05/06/2026 · API en vivo");
   const [copiedId,   setCopiedId]   = useState(null);
+  const [apiRaw,     setApiRaw]     = useState({}); // { region -> listado normalizado } de la API
 
   const suc = SUCURSALES[sucIdx];
 
@@ -316,9 +317,11 @@ export default function App() {
   }, [sucIdx]);
 
   useEffect(() => {
-    setLics(procesarRaw(SNAPSHOT_RAW, [...activeEsps], suc.region, suc.espsFilter));
+    const curSuc = SUCURSALES[sucIdx];
+    const source = apiRaw[curSuc.region] || SNAPSHOT_RAW;
+    setLics(procesarRaw(source, [...activeEsps], curSuc.region, curSuc.espsFilter));
     setPage(1);
-  }, [activeEsps, sucIdx]);
+  }, [activeEsps, sucIdx, apiRaw]);
 
   const saveEsps = async esps => { setActiveEsps(esps); try{ await window.storage.set(SK_ESPS,JSON.stringify([...esps])); }catch{} };
   const saveParts = async p => { setParts(p); try{ await window.storage.set(`parts:${suc.rut}`,JSON.stringify(p)); }catch{} };
@@ -331,25 +334,28 @@ export default function App() {
     const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
-      const curSuc = SUCURSALES[sucIdx];
-      const url = `/api/licitaciones?region=${encodeURIComponent(curSuc.region)}`;
-      let listado = null;
-      try{ const r=await fetch(url); const d=await r.json(); if(d?.Listado) listado=d.Listado; }catch{}
-      if (listado) {
-        const filtradas = listado.filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); });
-        const mapped = filtradas
-          .filter(l => {
-            if (!isRel(l.Nombre||"", [...activeEsps])) return false;
-            if (curSuc.espsFilter) {
-              const esps = getEsps(l.Nombre||"");
-              if (!esps.some(e => curSuc.espsFilter.includes(e))) return false;
-            }
-            return true;
-          })
-          .map(l => ({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:null, monto:null, pub:null, preg:null }))
-          .sort((a,b) => new Date(a.cierre)-new Date(b.cierre));
-        setLics(mapped);
-        setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo · "+mapped.length+" licitaciones");
+      // Traer datos por cada región única de las sucursales
+      const REGION_CODES = { "RM":"13", "Valparaíso":"5", "O'Higgins":"6" };
+      const regiones = [...new Set(SUCURSALES.map(s => s.region))];
+      const nuevoRaw = {};
+      let totalOk = 0;
+      for (const reg of regiones) {
+        const cod = REGION_CODES[reg];
+        if (!cod) continue;
+        try {
+          const r = await fetch(`/api/licitaciones?region=${cod}`);
+          const d = await r.json();
+          if (d?.Listado) {
+            nuevoRaw[reg] = d.Listado
+              .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
+              .map(l => ({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:null, pub:null, preg:null }));
+            totalOk++;
+          }
+        } catch {}
+      }
+      if (totalOk > 0) {
+        setApiRaw(nuevoRaw);
+        setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo");
         setPage(1);
       } else { setApiErr("No se pudo conectar a la API. Escribe 'actualiza licitaciones' en el chat."); }
     } catch(e){ setApiErr("Error: "+e.message); }
