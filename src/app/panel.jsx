@@ -70,6 +70,8 @@ const montoStr = (tipo, monto) => {
 
 const TIPO_ICON = { "Centro médico":"🏥","Clínica":"🏨","Clínica dental":"🦷" };
 const SK_ESPS  = "ss:activeEsps";
+const SK_CACHE = "ss:apiRawCache";
+const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
 const PAGE_SIZE = 30;
 
 const procesarRaw = (raw, activeArr, sucRegion, espsFilter) => raw
@@ -308,12 +310,33 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Cargar especialidades
     window.storage.get(SK_ESPS).then(r => {
       const esps = r?.value ? new Set(JSON.parse(r.value)) : new Set(Object.keys(ESPS));
       setActiveEsps(esps);
-      setLics(procesarRaw(SNAPSHOT_RAW, [...esps], SUCURSALES[sucIdx].region, SUCURSALES[sucIdx].espsFilter));
-    }).catch(() => setLics(procesarRaw(SNAPSHOT_RAW, Object.keys(ESPS), SUCURSALES[sucIdx].region, SUCURSALES[sucIdx].espsFilter)));
+    }).catch(() => {});
+
+    // Cargar ticket
     fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); window.storage.set("ss:ticket",d.ticket).catch(()=>{}); } else { window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
+
+    // Cargar caché o hacer fetch automático
+    window.storage.get(SK_CACHE).then(r => {
+      if (r?.value) {
+        const cache = JSON.parse(r.value);
+        const edad = Date.now() - (cache.ts || 0);
+        if (edad < CACHE_TTL_MS) {
+          // Caché vigente — usar directo
+          setApiRaw(cache.data);
+          const fecha = new Date(cache.ts).toLocaleDateString("es-CL");
+          const horas = Math.floor(edad / 3600000);
+          const mins = Math.floor((edad % 3600000) / 60000);
+          setLastFetch(`${fecha} · Caché (hace ${horas > 0 ? horas+"h " : ""}${mins}min)`);
+          return;
+        }
+      }
+      // Sin caché válido — fetch automático silencioso
+      fetchDesdeAPI(true);
+    }).catch(() => fetchDesdeAPI(true));
   }, []);
 
   useEffect(() => {
@@ -338,36 +361,38 @@ export default function App() {
   const saveParts = async p => { setParts(p); try{ await window.storage.set(`parts:${suc.rut}`,JSON.stringify(p)); }catch{} };
   const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await window.storage.set("ss:ticket",c); }catch{} };
 
-  const actualizarDesdeAPI = async () => {
-    // ticket manejado por el servidor
-    setLoading(true); setApiErr(null);
+  const fetchDesdeAPI = async (silencioso=false) => {
+    if (!silencioso) { setLoading(true); setApiErr(null); }
     const T=["ecografía","ecografia","ecotomografía","ecotomografia","transvaginal","doppler","scanner","tomografía","tomografia","mamografía","mamografia","radiografía","radiografia","telerradiología","resonancia magnética","resonancia magnetica","ecocardiograma","holter","electrocardiograma","arritmia","cardiovascular","test de esfuerzo","ergometría","otorrinolaringología","otorrino","audiometría","audiometria","impedanciometría","audífono","hipoacusia","neurología","neurologia","neurofisiología","electroencefalograma","electromiografía","espirometría","espirometria","función pulmonar","óxido nítrico","urodinamia","cistoscopía","uroflujometría","medicina general","consultas médicas","fonasa","telemedicina","prestaciones de salud","servicio dental","atención dental","endodoncia","cirujano dentista","servicio odontológico","kinesiología","kinesiologia","rehabilitación","rehabilitacion","fisioterapia","fonoaudiología","laboratorio clínico","hemograma","bioquímica","microbiología","anatomía patológica","imágenes diagnósticas","imagenes diagnosticas","imagenología","imagenologia","programa imágenes"];
     const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
-      // Traer datos por cada región única de las sucursales
       let listado = null;
       try { const r = await fetch(`/api/licitaciones?resolveUnknown=1`); const d = await r.json(); if(d?.Listado) listado = d.Listado; } catch {}
       if (listado) {
-        // Agrupar por región resuelta
         const nuevoRaw = {};
         listado
           .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
           .forEach(l => {
             const reg = l.RegionResolved || null;
-            if (!reg) return; // sin región conocida, descartar
+            if (!reg) return;
             if (!nuevoRaw[reg]) nuevoRaw[reg] = [];
             nuevoRaw[reg].push({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:l.MontoEstimado||null, pub:l.FechaPublicacion?(l.FechaPublicacion.split("T")[0]):null, preg:null });
           });
         if (Object.keys(nuevoRaw).length > 0) {
           setApiRaw(nuevoRaw);
-          setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo");
+          const ts = new Date().toLocaleDateString("es-CL");
+          setLastFetch(ts+" · API en vivo");
           setPage(1);
-        } else { setApiErr("No se encontraron licitaciones con región identificada."); }
-      } else { setApiErr("No se pudo conectar a la API."); }
-    } catch(e){ setApiErr("Error: "+e.message); }
-    setLoading(false);
+          // Guardar en caché con timestamp
+          try { await window.storage.set(SK_CACHE, JSON.stringify({ ts: Date.now(), data: nuevoRaw })); } catch {}
+        } else if (!silencioso) { setApiErr("No se encontraron licitaciones con región identificada."); }
+      } else if (!silencioso) { setApiErr("No se pudo conectar a la API."); }
+    } catch(e){ if (!silencioso) setApiErr("Error: "+e.message); }
+    if (!silencioso) setLoading(false);
   };
+
+  const actualizarDesdeAPI = () => fetchDesdeAPI(false);
 
   const fetchDetalle = async id => {
     if(detData[id]||!ticket) return; setLoadDet(true);
