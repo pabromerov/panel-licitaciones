@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const ticket = searchParams.get("ticket");
+  // Ticket: primero del request, si no del servidor
+  const ticket = searchParams.get("ticket") || process.env.MP_TICKET || "";
   const codigo = searchParams.get("codigo");
 
   if (!ticket) {
-    return NextResponse.json({ error: "Ticket requerido" }, { status: 400 });
+    return NextResponse.json({ error: "Ticket no configurado" }, { status: 400 });
   }
 
   let url = `https://api.mercadopublico.cl/servicios/v1/publico/licitaciones.json?ticket=${ticket}`;
@@ -34,10 +35,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     return NextResponse.json(data, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store",
-      },
+      headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" },
     });
   } catch (error: any) {
     return NextResponse.json(

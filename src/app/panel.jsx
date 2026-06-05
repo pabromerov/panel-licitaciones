@@ -222,7 +222,7 @@ export default function App() {
       setActiveEsps(esps);
       setLics(procesarRaw(SNAPSHOT_RAW, [...esps], SUCURSALES[sucIdx].region, SUCURSALES[sucIdx].espsFilter));
     }).catch(() => setLics(procesarRaw(SNAPSHOT_RAW, Object.keys(ESPS), SUCURSALES[sucIdx].region, SUCURSALES[sucIdx].espsFilter)));
-    window.storage.get("ss:ticket").then(r => { if(r?.value) setTicket(r.value); }).catch(()=>{});
+    fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); window.storage.set("ss:ticket",d.ticket).catch(()=>{}); } else { window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
   }, []);
 
   useEffect(() => {
