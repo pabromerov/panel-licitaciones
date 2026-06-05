@@ -331,12 +331,12 @@ export default function App() {
     const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
-      const url = '/api/licitaciones';
+      const curSuc = SUCURSALES[sucIdx];
+      const url = `/api/licitaciones?region=${encodeURIComponent(curSuc.region)}`;
       let listado = null;
       try{ const r=await fetch(url); const d=await r.json(); if(d?.Listado) listado=d.Listado; }catch{}
       if (listado) {
         const filtradas = listado.filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); });
-        const curSuc = SUCURSALES[sucIdx];
         const mapped = filtradas
           .filter(l => {
             if (!isRel(l.Nombre||"", [...activeEsps])) return false;

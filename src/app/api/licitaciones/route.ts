@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const REGION_CODES: Record<string, string> = { "RM": "13", "Valparaíso": "5", "O'Higgins": "6" };
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  // Ticket: primero del request, si no del servidor
   const ticket = searchParams.get("ticket") || process.env.MP_TICKET || "";
   const codigo = searchParams.get("codigo");
+  const region = searchParams.get("region");
 
   if (!ticket) {
     return NextResponse.json({ error: "Ticket no configurado" }, { status: 400 });
@@ -15,6 +17,9 @@ export async function GET(request: NextRequest) {
     url += `&codigo=${codigo}`;
   } else {
     url += `&estado=activas`;
+    if (region && REGION_CODES[region]) {
+      url += `&codigo_region=${REGION_CODES[region]}`;
+    }
   }
 
   try {
