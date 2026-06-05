@@ -54,7 +54,7 @@ const regionOk = (licRegion, sucRegion) => {
 
 const getTipo  = cod => { const p=(cod||"").split("-"); const last=p[p.length-1]||""; const m=last.match(/^([A-Za-z]+\d?)(\d{2})$/); return m?m[1].toUpperCase():last.replace(/\d+$/,"").toUpperCase(); };
 const TIPO_DESC= { L1:"<100 UTM", LE:"100–1.000 UTM", LP:"1.000–5.000 UTM", LR:">5.000 UTM", B1:"Lic.Privada", B2:"Lic.Privada", CO:"Contrato" };
-const getEstado= (cod,cierre) => { if(cod===5){ const d=Math.ceil((new Date((cierre||"").replace("T"," ").split(".")[0])-new Date())/86400000); return d<=7&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[cod]||"publicada"; };
+const getEstado= (cod,cierre) => { const c=Number(cod); if(c===5){ const d=Math.ceil((new Date((cierre||"").replace("T"," ").split(".")[0])-new Date())/86400000); return d<=7&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[c]||"publicada"; };
 const UTM = 68000;
 const fmt  = n => n?"$ "+Number(n).toLocaleString("es-CL"):"—";
 const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
@@ -320,10 +320,17 @@ export default function App() {
     window.storage.get(`parts:${suc.rut}`).then(r => setParts(r?JSON.parse(r.value):{})).catch(()=>setParts({}));
   }, [sucIdx]);
 
+  const REGION_FULL = { "RM":"Región Metropolitana de Santiago", "Valparaíso":"Región de Valparaíso", "O'Higgins":"Región del Libertador General Bernardo O'Higgins" };
   useEffect(() => {
     const curSuc = SUCURSALES[sucIdx];
-    const source = apiRaw[curSuc.region] || SNAPSHOT_RAW;
-    setLics(procesarRaw(source, [...activeEsps], curSuc.region, curSuc.espsFilter));
+    if (Object.keys(apiRaw).length > 0) {
+      // Buscar la clave en apiRaw que corresponde a la región de la sucursal
+      const regionFull = REGION_FULL[curSuc.region];
+      const source = apiRaw[regionFull] || apiRaw[curSuc.region] || [];
+      setLics(procesarRaw(source, [...activeEsps], curSuc.region, curSuc.espsFilter));
+    } else {
+      setLics(procesarRaw(SNAPSHOT_RAW, [...activeEsps], curSuc.region, curSuc.espsFilter));
+    }
     setPage(1);
   }, [activeEsps, sucIdx, apiRaw]);
 
@@ -339,29 +346,25 @@ export default function App() {
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
       // Traer datos por cada región única de las sucursales
-      const REGION_CODES = { "RM":"13", "Valparaíso":"5", "O'Higgins":"6" };
-      const regiones = [...new Set(SUCURSALES.map(s => s.region))];
-      const nuevoRaw = {};
-      let totalOk = 0;
-      for (const reg of regiones) {
-        const cod = REGION_CODES[reg];
-        if (!cod) continue;
-        try {
-          const r = await fetch(`/api/licitaciones?region=${cod}`);
-          const d = await r.json();
-          if (d?.Listado) {
-            nuevoRaw[reg] = d.Listado
-              .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
-              .map(l => ({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:null, pub:null, preg:null }));
-            totalOk++;
-          }
-        } catch {}
-      }
-      if (totalOk > 0) {
-        setApiRaw(nuevoRaw);
-        setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo");
-        setPage(1);
-      } else { setApiErr("No se pudo conectar a la API. Escribe 'actualiza licitaciones' en el chat."); }
+      let listado = null;
+      try { const r = await fetch(`/api/licitaciones?resolveUnknown=1`); const d = await r.json(); if(d?.Listado) listado = d.Listado; } catch {}
+      if (listado) {
+        // Agrupar por región resuelta
+        const nuevoRaw = {};
+        listado
+          .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
+          .forEach(l => {
+            const reg = l.RegionResolved || null;
+            if (!reg) return; // sin región conocida, descartar
+            if (!nuevoRaw[reg]) nuevoRaw[reg] = [];
+            nuevoRaw[reg].push({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:l.MontoEstimado||null, pub:l.FechaPublicacion?(l.FechaPublicacion.split("T")[0]):null, preg:null });
+          });
+        if (Object.keys(nuevoRaw).length > 0) {
+          setApiRaw(nuevoRaw);
+          setLastFetch(new Date().toLocaleDateString("es-CL")+" · API en vivo");
+          setPage(1);
+        } else { setApiErr("No se encontraron licitaciones con región identificada."); }
+      } else { setApiErr("No se pudo conectar a la API."); }
     } catch(e){ setApiErr("Error: "+e.message); }
     setLoading(false);
   };
@@ -410,7 +413,7 @@ export default function App() {
     if (filtroFecha==="todas") return arr;
     const now=new Date(); const y=now.getFullYear(); const m=now.getMonth();
     return arr.filter(l=>{
-      if(!l.pub) return true;
+      if(!l.pub) return filtroFecha==="todas";
       const p=new Date(l.pub);
       if(filtroFecha==="mes_actual")   return p.getFullYear()===y&&p.getMonth()===m;
       if(filtroFecha==="mes_anterior") { const pm=m===0?11:m-1; const py=m===0?y-1:y; return p.getFullYear()===py&&p.getMonth()===pm; }
