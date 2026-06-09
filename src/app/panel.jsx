@@ -325,6 +325,7 @@ export default function App() {
   const [diagLoading,setDiagLoading]= useState(false);
   const [lastDiag,   setLastDiag]   = useState(null);
   const [corrLog,    setCorrLog]    = useState([]);
+  const [aiModel,    setAiModel]    = useState("gpt-4o");
   const [apiRaw,     setApiRaw]     = useState({}); // { region -> listado normalizado } de la API
 
   const suc = SUCURSALES[sucIdx];
@@ -465,6 +466,37 @@ export default function App() {
   };
   const quitarP = async k => { const n={...parts}; delete n[k]; await saveParts(n); };
 
+  // ── Helper IA (OpenAI vía proxy o Claude directo) ─────────────────────────
+  const AI_MODELS = [
+    { id:"gpt-4o",      label:"GPT-4o",      icon:"🟢", desc:"Más potente" },
+    { id:"gpt-4o-mini", label:"GPT-4o mini", icon:"⚡", desc:"Más rápido" },
+    { id:"claude",      label:"Claude",       icon:"🟣", desc:"Anthropic" },
+  ];
+
+  const callAI = async (prompt) => {
+    if (aiModel === "claude") {
+      // Llamada directa a Anthropic (funciona en entornos Claude.ai)
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1500, messages:[{ role:"user", content:prompt }] }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      return data.content?.map(b => b.text || "").join("") || "Sin respuesta.";
+    } else {
+      // OpenAI vía proxy serverless /api/analisis (key segura en servidor)
+      const res = await fetch("/api/analisis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: aiModel }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return data.text || "Sin respuesta.";
+    }
+  };
+
   const analizarIA = async (item,tipo,dd) => {
     const key=`${sucIdx}-${tipo}-${item.id}`; setCargIA(p=>({...p,[key]:true}));
     const org=dd?.Comprador?.NombreOrganismo||item.org||"—";
@@ -475,10 +507,9 @@ export default function App() {
       ?`Eres experto en licitaciones públicas de salud en Chile. Analiza esta licitación para la sucursal indicada.\n\nSUCURSAL: ${suc.nombre} | ${suc.empresa} (${suc.rut}) | ${suc.tipo} | ${suc.ciudad}\n\nLICITACIÓN: ${item.nombre}\nID: ${item.id}\nTipo: ${item.tipo} (${TIPO_DESC[item.tipo]||""})\nOrganismo: ${org}\nMonto estimado: ${monto?fmt(monto):"Ver bases"}\nCierre: ${fmtD(item.cierre)} ${d!==null&&d>0?"(en "+d+" días)":""}\nDescripción: ${desc}\nEspecialidades detectadas: ${item.esps?.join(", ")||"—"}\n\n1. REQUISITOS PROBABLES\nLista con ✅ (probablemente cumples), ❌ (probablemente NO), ❓ (verificar en bases)\n\n2. DOCUMENTOS A PREPARAR\nDocumentos típicos para este tipo de licitación\n\n3. PASOS INMEDIATOS\nExactamente 3 pasos. El primero SIEMPRE: "Descarga las bases desde Mercado Público con el código ${item.id}"\n\n4. RECOMENDACIÓN: SÍ / NO / CONDICIONADO — 1 línea\n\nEspañol directo, sin preamble.`
       :`Analiza esta compra ágil:\nSUCURSAL: ${suc.nombre} | ${suc.tipo} | ${suc.ciudad}\nCOMPRA: ${item.nombre} | ${item.organismo} | ${fmt(item.monto)}\nÍTEMS: ${item.items.map(i=>`${i.desc} (${i.cant} ${i.unidad})`).join("; ")}\n1. RECOMENDACIÓN: SÍ/NO/CONDICIONADO\n2. CONSIDERACIONES (máx. 3)\n3. ACCIÓN inmediata (máx. 2)\nEspañol, directo.`;
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
-      const data=await res.json();
-      setAnalisis(p=>({...p,[key]:data.content?.map(b=>b.text||"").join("")||"Sin respuesta."}));
-    }catch{ setAnalisis(p=>({...p,[key]:"Error al conectar."})); capturarError("analizarIA:"+item.id, new Error("Error al conectar con la API de Anthropic")); }
+      const texto = await callAI(prompt);
+      setAnalisis(p=>({...p,[key]:texto}));
+    }catch(e){ setAnalisis(p=>({...p,[key]:"Error: "+e.message})); capturarError("analizarIA:"+item.id, e); }
     setCargIA(p=>({...p,[key]:false}));
   };
 
@@ -571,9 +602,8 @@ ESTADO:
 Para cada problema: 1. DIAGNÓSTICO (causa raíz) 2. IMPACTO 3. CORRECCIÓN (pasos exactos, máx. 3) 4. PRIORIDAD: 🔴CRÍTICA/🟠ALTA/🟡MEDIA/🟢BAJA
 Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
     try {
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,messages:[{role:"user",content:prompt}]})});
-      const data=await res.json();
-      setDiagResult(data.content?.map(b=>b.text||"").join("")||"Sin respuesta.");
+      const texto = await callAI(prompt);
+      setDiagResult(texto);
     } catch(e){ setDiagResult("Error al conectar: "+e.message); capturarError("diagnosticarConIA",e); }
     setDiagLoading(false);
   };
@@ -715,6 +745,9 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {vista==="detalle"&&<button onClick={()=>setVista("dashboard")} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:500,cursor:"pointer",color:"var(--color-text-secondary)"}}>← Volver</button>}
           <button onClick={()=>setShowTkt(!showTkt)} style={{background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"5px 10px",fontSize:11,cursor:"pointer",color:ticket?"#3B6D11":"var(--color-text-tertiary)"}}>{ticket?"🟢 API conectada":"⚙ Conectar API"}</button>
+          <div style={{display:"flex",gap:3,background:"var(--color-background-secondary)",borderRadius:8,padding:"3px",border:"0.5px solid var(--color-border-tertiary)"}}>
+            {AI_MODELS.map(m=><button key={m.id} onClick={()=>setAiModel(m.id)} title={m.desc} style={{padding:"3px 9px",borderRadius:6,border:"none",background:aiModel===m.id?"var(--color-background-primary)":"transparent",fontWeight:aiModel===m.id?600:400,fontSize:11,cursor:"pointer",color:aiModel===m.id?"var(--color-text-primary)":"var(--color-text-tertiary)",boxShadow:aiModel===m.id?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>{m.icon} {m.label}</button>)}
+          </div>
         </div>
       </div>
 
@@ -1055,7 +1088,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                   <div><span style={{fontSize:13,fontWeight:600}}>Análisis con IA</span><span style={{fontSize:11,color:"var(--color-text-tertiary)",marginLeft:8}}>para {suc.nombre}</span></div>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
                     {!dd&&<button onClick={()=>fetchDetalle(detalle.id)} disabled={loadDet} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-secondary)"}}>{loadDet?"Cargando…":"↺ Cargar detalle"}</button>}
-                    {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"lic",dd)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:cargIA[key]?"wait":"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":"✦ Analizar esta licitación ↗"}</button>}
+                    {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"lic",dd)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:cargIA[key]?"wait":"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":`✦ Analizar con ${AI_MODELS.find(m=>m.id===aiModel)?.label||aiModel} ↗`}</button>}
                   </div>
                 </div>
                 {analisis[key]&&<div><div style={{fontSize:13,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{analisis[key]}</div><button onClick={()=>setAnalisis(p=>{const n={...p};delete n[key];return n;})} style={{marginTop:10,background:"none",border:"none",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer",padding:0}}>↺ Volver a analizar</button></div>}
@@ -1104,7 +1137,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
               <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"15px 17px",marginBottom:12}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:analisis[key]?12:0}}>
                   <span style={{fontSize:13,fontWeight:600}}>Análisis con IA</span>
-                  {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"ca",null)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":"✦ Analizar ↗"}</button>}
+                  {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"ca",null)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":`✦ Analizar con ${AI_MODELS.find(m=>m.id===aiModel)?.label||aiModel} ↗`}</button>}
                 </div>
                 {analisis[key]&&<div><div style={{fontSize:13,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{analisis[key]}</div><button onClick={()=>setAnalisis(p=>{const n={...p};delete n[key];return n;})} style={{marginTop:10,background:"none",border:"none",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer",padding:0}}>↺ Volver a analizar</button></div>}
               </div>
