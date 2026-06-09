@@ -399,6 +399,10 @@ export default function App() {
       let listado = null;
       try { const r = await fetch(`/api/licitaciones?resolveUnknown=1`); const d = await r.json(); if(d?.Listado) listado = d.Listado; } catch {}
       if (listado) {
+        // Tabla de fechas de publicación desde SNAPSHOT (el endpoint /activas no las devuelve)
+        const snapshotPub = {};
+        SNAPSHOT_RAW.forEach(s => { if(s.pub) snapshotPub[s.id] = s.pub; });
+
         const nuevoRaw = {};
         listado
           .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
@@ -406,7 +410,11 @@ export default function App() {
             const reg = l.RegionResolved || null;
             if (!reg) return;
             if (!nuevoRaw[reg]) nuevoRaw[reg] = [];
-            nuevoRaw[reg].push({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:l.MontoEstimado||null, pub:l.FechaPublicacion?(l.FechaPublicacion.split("T")[0]):null, preg:null });
+            // FechaPublicacion no viene del endpoint /activas — usar SNAPSHOT si existe
+            const pub = l.FechaPublicacion
+              ? l.FechaPublicacion.split("T")[0]
+              : (snapshotPub[l.CodigoExterno] || null);
+            nuevoRaw[reg].push({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:l.MontoEstimado||null, pub, preg:null });
           });
         if (Object.keys(nuevoRaw).length > 0) {
           setApiRaw(nuevoRaw);
@@ -428,7 +436,19 @@ export default function App() {
     const url=`/api/licitaciones?codigo=${id}`;
     let item=null;
     try{ const r=await fetch(url); const d=await r.json(); item=d?.Listado?.[0]; }catch{}
-    if(item) setDetData(p=>({...p,[id]:item}));
+    if(item) {
+      setDetData(p=>({...p,[id]:item}));
+      // Actualizar pub y org en lics con los datos del detalle (que sí los tiene)
+      const fechaPub = item?.Fechas?.FechaPublicacion;
+      const org = item?.Comprador?.NombreOrganismo;
+      if (fechaPub || org) {
+        setLics(prev => prev.map(l => l.id === id ? {
+          ...l,
+          ...(fechaPub && !l.pub ? { pub: fechaPub.split("T")[0] } : {}),
+          ...(org && !l.org ? { org } : {}),
+        } : l));
+      }
+    }
     setLoadDet(false);
   };
 

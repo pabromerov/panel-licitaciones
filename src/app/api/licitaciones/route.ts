@@ -86,11 +86,15 @@ export async function GET(request: NextRequest) {
           );
           const d2 = await r2.json();
           const region = d2?.Listado?.[0]?.Comprador?.RegionUnidad;
+          const fechaPub = d2?.Listado?.[0]?.Fechas?.FechaPublicacion;
           if (region) {
             table[prefijo] = region;
-            // Actualizar en el listado enriched
+            // Actualizar región Y fecha publicación en todos los items con ese prefijo
             enriched.forEach((l: any) => {
-              if (l.CodigoExterno?.startsWith(prefijo + "-")) l.RegionResolved = region;
+              if (l.CodigoExterno?.startsWith(prefijo + "-")) {
+                l.RegionResolved = region;
+                if (fechaPub && !l.FechaPublicacion) l.FechaPublicacion = fechaPub;
+              }
             });
           }
         } catch {}
