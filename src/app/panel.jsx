@@ -6,12 +6,7 @@ const SUCURSALES = [
   { empresa:"SANASALUD CENTROS MÉDICOS S.A.", rut:"76.686.235-7", nombre:"Centro Médico Pedro de Valdivia", direccion:"Av. Pedro de Valdivia 195, Providencia", ciudad:"Santiago", tipo:"Centro médico", region:"RM", espsFilter:null },
   { empresa:"CLÍNICA SAN ANTONIO S.A.", rut:"78.035.390-2", nombre:"Clínica San Antonio", direccion:"Antonio Palmieri 250", ciudad:"San Antonio", tipo:"Clínica", region:"Valparaíso", espsFilter:null },
   { empresa:"NUEVA SANTA CATALINA S.A.", rut:"76.495.416-5", nombre:"Centro Médico Santa Catalina", direccion:"Aníbal Pinto 436, Buin", ciudad:"Santiago", tipo:"Centro médico", region:"RM", espsFilter:null },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Maipú", direccion:"Chacabuco 40, piso 6", ciudad:"Santiago", tipo:"Clínica dental", region:"RM", espsFilter:["Odontología","Rehabilitación"] },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Florida Center", direccion:"Av. Vicuña Mackenna 6100, local 1003", ciudad:"Santiago", tipo:"Clínica dental", region:"RM", espsFilter:["Odontología","Rehabilitación"] },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Valparaíso", direccion:"Av. Errazuriz 629, local 101", ciudad:"Valparaíso", tipo:"Clínica dental", region:"Valparaíso", espsFilter:["Odontología","Rehabilitación"] },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Puente Alto", direccion:"Los Toros 5441", ciudad:"Santiago", tipo:"Clínica dental", region:"RM", espsFilter:["Odontología","Rehabilitación"] },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Mall Vivo Rancagua", direccion:"José Cuevas 483, local 2", ciudad:"Rancagua", tipo:"Clínica dental", region:"O'Higgins", espsFilter:["Odontología","Rehabilitación"] },
-  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"Sanasalud Dental Mall Vivo Centro", direccion:"Puente 689, piso 4", ciudad:"Santiago", tipo:"Clínica dental", region:"RM", espsFilter:["Odontología","Rehabilitación"] },
+  { empresa:"SANADENT S.A.", rut:"76.351.947-3", nombre:"SANADENT S.A.", direccion:"RM · Valparaíso · Rancagua (O'Higgins)", ciudad:"Nacional", tipo:"Empresa dental", region:"RM", regiones:["RM","Valparaíso","O'Higgins"], espsFilter:["Odontología","Rehabilitación"] },
 ];
 
 const COMPRAS_AGILES = [
@@ -66,6 +61,12 @@ const regionOk = (licRegion, sucRegion) => {
   const kws = REGION_KW[sucRegion] || [norm(sucRegion)];
   return kws.some(k => norm(licRegion).includes(k));
 };
+// Multi-region helper: evalúa contra suc.regiones si existe, sino contra suc.region
+const regionOkSuc = (licRegion, suc) => {
+  if (!licRegion) return false;
+  if (suc?.regiones) return suc.regiones.some(r => regionOk(licRegion, r));
+  return regionOk(licRegion, suc?.region);
+};
 
 const getTipo  = cod => { const p=(cod||"").split("-"); const last=p[p.length-1]||""; const m=last.match(/^([A-Za-z]+\d?)(\d{2})$/); return m?m[1].toUpperCase():last.replace(/\d+$/,"").toUpperCase(); };
 const TIPO_DESC= { L1:"<100 UTM", LE:"100–1.000 UTM", LP:"1.000–5.000 UTM", LR:">5.000 UTM", B1:"Lic.Privada", B2:"Lic.Privada", CO:"Contrato" };
@@ -89,13 +90,15 @@ const SK_CACHE = "ss:apiRawCache";
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
 const PAGE_SIZE = 30;
 
-const procesarRaw = (raw, activeArr, sucRegion, espsFilter) => raw
+const procesarRaw = (raw, activeArr, sucRegion, espsFilter, sucObj=null) => raw
   .filter(l => {
     if (!isRel(l.nombre||l.Nombre||"", activeArr)) return false;
-    // Si la región ya está normalizada (viene de la API), comparar directo; si es texto largo, usar regionOk
     const lr = l.region;
     if (!lr) return false;
-    const regionMatch = lr === sucRegion || regionOk(lr, sucRegion);
+    // Soporte multi-región: usar sucObj.regiones si existe
+    const regionMatch = sucObj?.regiones
+      ? sucObj.regiones.some(r => regionOk(lr, r))
+      : (lr === sucRegion || regionOk(lr, sucRegion));
     if (!regionMatch) return false;
     if (espsFilter) {
       const esps = getEsps(l.nombre||l.Nombre||"");
@@ -368,12 +371,17 @@ export default function App() {
   useEffect(() => {
     const curSuc = SUCURSALES[sucIdx];
     if (Object.keys(apiRaw).length > 0) {
-      // Buscar la clave en apiRaw que corresponde a la región de la sucursal
-      const regionFull = REGION_FULL[curSuc.region];
-      const source = apiRaw[regionFull] || apiRaw[curSuc.region] || [];
-      setLics(procesarRaw(source, [...activeEsps], curSuc.region, curSuc.espsFilter));
+      let source;
+      if (curSuc.regiones) {
+        // Multi-región (ej. SANADENT): combinar fuentes de todas las regiones
+        source = curSuc.regiones.flatMap(r => apiRaw[REGION_FULL[r]] || apiRaw[r] || []);
+      } else {
+        const regionFull = REGION_FULL[curSuc.region];
+        source = apiRaw[regionFull] || apiRaw[curSuc.region] || [];
+      }
+      setLics(procesarRaw(source, [...activeEsps], curSuc.region, curSuc.espsFilter, curSuc));
     } else {
-      setLics(procesarRaw(SNAPSHOT_RAW, [...activeEsps], curSuc.region, curSuc.espsFilter));
+      setLics(procesarRaw(SNAPSHOT_RAW, [...activeEsps], curSuc.region, curSuc.espsFilter, curSuc));
     }
     setPage(1);
   }, [activeEsps, sucIdx, apiRaw]);
@@ -469,7 +477,7 @@ export default function App() {
       issues.push({ type:"config", sev:"critica", msg:"Ticket de API no configurado", detalle:"Sin ticket no se pueden actualizar licitaciones desde Mercado Público ni cargar detalles.", fix:"Haz clic en '⚙ Conectar API' e ingresa tu ticket." });
     }
 
-    const wrongRegion = lics.filter(l => l.region && !regionOk(l.region, currentSuc.region));
+    const wrongRegion = lics.filter(l => l.region && !regionOkSuc(l.region, currentSuc));
     if (wrongRegion.length > 0) {
       issues.push({ type:"logica", sev:"critica", fixType:"region_incorrecta", msg:`${wrongRegion.length} licitación(es) de región incorrecta visible(s)`, detalle:`Ej: "${wrongRegion[0].nombre}" → región "${wrongRegion[0].region}" en sucursal de ${currentSuc.region}`, fix:`Revisar REGION_KW para la región "${currentSuc.region}"` });
     }
@@ -554,7 +562,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
   const AUTO_FIXES = {
     region_incorrecta: () => {
       const s=SUCURSALES[sucIdx]; const before=lics.length;
-      const fixed=lics.filter(l=>!l.region||regionOk(l.region,s.region));
+      const fixed=lics.filter(l=>!l.region||regionOkSuc(l.region,s));
       setLics(fixed);
       setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:`✅ Región: eliminadas ${before-fixed.length} licitación(es) con región incorrecta`}]);
       setTimeout(()=>runDiagnostics(),50);
@@ -583,8 +591,8 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
 
   const autoCorregirTodo = () => {
     const s=SUCURSALES[sucIdx]; let fixed=[...lics]; const msgs=[];
-    const wrongReg=fixed.filter(l=>l.region&&!regionOk(l.region,s.region));
-    if(wrongReg.length>0){fixed=fixed.filter(l=>!l.region||regionOk(l.region,s.region));msgs.push(`${wrongReg.length} región incorrecta`);}
+    const wrongReg=fixed.filter(l=>l.region&&!regionOkSuc(l.region,s));
+    if(wrongReg.length>0){fixed=fixed.filter(l=>!l.region||regionOkSuc(l.region,s));msgs.push(`${wrongReg.length} región incorrecta`);}
     if(s.espsFilter){const wrongEsp=fixed.filter(l=>!l.esps.some(e=>s.espsFilter.includes(e)));if(wrongEsp.length>0){fixed=fixed.filter(l=>l.esps.some(e=>s.espsFilter.includes(e)));msgs.push(`${wrongEsp.length} sin especialidad dental`);}}
     const seen=new Set();const dB=fixed.length;fixed=fixed.filter(l=>{if(seen.has(l.id))return false;seen.add(l.id);return true;});if(dB>fixed.length)msgs.push(`${dB-fixed.length} duplicados`);
     setLics(fixed);
@@ -611,7 +619,9 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
   };
   const licsFiltered = applyDate(filtro==="todos" ? lics : lics.filter(l=>l.estado===filtro));
   const licsPaged    = licsFiltered.slice(0, page*PAGE_SIZE);
-  const casRegion    = COMPRAS_AGILES.filter(c=>c.region===suc.region);
+  const casRegion    = suc.regiones
+    ? COMPRAS_AGILES.filter(c => suc.regiones.includes(c.region))
+    : COMPRAS_AGILES.filter(c => c.region===suc.region);
   const casFiltered  = filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro);
   const misP         = Object.entries(parts);
   const espCounts    = Object.keys(ESPS).map(k=>({name:k,value:lics.filter(l=>l.esps.includes(k)).length})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
@@ -623,7 +633,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
   const diagBadgeCount = (()=>{
     let n=0;
     if(!ticket) n++;
-    if(lics.some(l=>l.region&&!regionOk(l.region,suc.region))) n++;
+    if(lics.some(l=>l.region && !regionOkSuc(l.region, suc))) n++;
     if(SNAPSHOT_RAW.some(l=>(l.region===undefined||l.region===null)&&isRel(l.nombre||l.Nombre||"",[...activeEsps]))) n++;
     if(errorLog.some(e=>(new Date()-new Date(e.ts))<3600000)) n++;
     return n;
@@ -677,7 +687,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
             <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
               <span style={{fontSize:14,fontWeight:600}}>{suc.nombre}</span>
               <span style={{fontSize:10,background:"#E6F1FB",color:"#185FA5",borderRadius:20,padding:"2px 8px",fontWeight:500}}>{suc.tipo}</span>
-              <span style={{fontSize:10,background:"#F1EFE8",color:"#5F5E5A",borderRadius:20,padding:"2px 8px",fontWeight:500}}>Región {suc.region}</span>
+              <span style={{fontSize:10,background:"#F1EFE8",color:"#5F5E5A",borderRadius:20,padding:"2px 8px",fontWeight:500}}>{suc.regiones ? suc.regiones.map(r=>`Región ${r}`).join(" · ") : `Región ${suc.region}`}</span>
             </div>
             <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:2}}>{suc.empresa} · {suc.rut} · {suc.direccion}</div>
           </div>
