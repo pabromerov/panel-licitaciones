@@ -40,6 +40,21 @@ const E_LIC  = { publicada:{label:"Publicada",bg:"#E6F1FB",color:"#185FA5",dot:"
 const E_CA   = { publicada:{label:"Abierta",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, adjudicada:{label:"Adjudicada",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"} };
 const E_PART = { presentada:{label:"Presentada",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, en_evaluacion:{label:"En evaluación",bg:"#EEEDFE",color:"#534AB7",dot:"#7F77DD"}, ganada:{label:"Adjudicada a nosotros",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, perdida:{label:"Adjudicada a otro",bg:"#FCEBEB",color:"#A32D2D",dot:"#E24B4A"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"} };
 
+// ── Sistema de diagnóstico ─────────────────────────────────────────────────
+const SEV = {
+  critica:{ icon:"🔴", label:"Crítica", bg:"#FCEBEB", color:"#A32D2D", dot:"#E24B4A" },
+  alta:   { icon:"🟠", label:"Alta",    bg:"#FAEEDA", color:"#854F0B", dot:"#EF9F27" },
+  media:  { icon:"🟡", label:"Media",   bg:"#FEFCE8", color:"#856200", dot:"#CCAA00" },
+  baja:   { icon:"🟢", label:"Baja",    bg:"#EAF3DE", color:"#3B6D11", dot:"#639922" },
+};
+const TIPO_DIAG = {
+  logica: { icon:"🔍", label:"Lógica"  },
+  datos:  { icon:"📊", label:"Datos"   },
+  api:    { icon:"🌐", label:"API"     },
+  codigo: { icon:"💻", label:"Código"  },
+  config: { icon:"⚙️",  label:"Config"  },
+};
+
 const norm     = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 const matchEsp = (nombre,k) => ESPS[k].terms.some(t => norm(nombre).includes(norm(t)));
 const getEsps  = nombre => Object.keys(ESPS).filter(k => matchEsp(nombre,k));
@@ -301,6 +316,12 @@ export default function App() {
   const [apiErr,     setApiErr]     = useState(null);
   const [lastFetch,  setLastFetch]  = useState("05/06/2026 · API en vivo");
   const [copiedId,   setCopiedId]   = useState(null);
+  const [errorLog,   setErrorLog]   = useState([]);
+  const [diagIssues, setDiagIssues] = useState([]);
+  const [diagResult, setDiagResult] = useState(null);
+  const [diagLoading,setDiagLoading]= useState(false);
+  const [lastDiag,   setLastDiag]   = useState(null);
+  const [corrLog,    setCorrLog]    = useState([]);
   const [apiRaw,     setApiRaw]     = useState({}); // { region -> listado normalizado } de la API
 
   const suc = SUCURSALES[sucIdx];
@@ -429,8 +450,148 @@ export default function App() {
       const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
       const data=await res.json();
       setAnalisis(p=>({...p,[key]:data.content?.map(b=>b.text||"").join("")||"Sin respuesta."}));
-    }catch{ setAnalisis(p=>({...p,[key]:"Error al conectar."})); }
+    }catch{ setAnalisis(p=>({...p,[key]:"Error al conectar."})); capturarError("analizarIA:"+item.id, new Error("Error al conectar con la API de Anthropic")); }
     setCargIA(p=>({...p,[key]:false}));
+  };
+
+  // ── Sistema de diagnóstico ─────────────────────────────────────────────────
+  const capturarError = (context, error) => {
+    setErrorLog(prev => [...prev.slice(-49), {
+      ts: new Date().toISOString(), context, message: error?.message || String(error)
+    }]);
+  };
+
+  const runDiagnostics = () => {
+    const issues = [];
+    const currentSuc = SUCURSALES[sucIdx];
+
+    if (!ticket) {
+      issues.push({ type:"config", sev:"critica", msg:"Ticket de API no configurado", detalle:"Sin ticket no se pueden actualizar licitaciones desde Mercado Público ni cargar detalles.", fix:"Haz clic en '⚙ Conectar API' e ingresa tu ticket." });
+    }
+
+    const wrongRegion = lics.filter(l => l.region && !regionOk(l.region, currentSuc.region));
+    if (wrongRegion.length > 0) {
+      issues.push({ type:"logica", sev:"critica", fixType:"region_incorrecta", msg:`${wrongRegion.length} licitación(es) de región incorrecta visible(s)`, detalle:`Ej: "${wrongRegion[0].nombre}" → región "${wrongRegion[0].region}" en sucursal de ${currentSuc.region}`, fix:`Revisar REGION_KW para la región "${currentSuc.region}"` });
+    }
+
+    const sinRegion = SNAPSHOT_RAW.filter(l => {
+      const nm = l.nombre || l.Nombre || "";
+      return (l.region===undefined||l.region===null) && isRel(nm, [...activeEsps]);
+    });
+    if (sinRegion.length > 0) {
+      const prefixes = [...new Set(sinRegion.map(l => (l.id||"").split("-")[0]))].filter(Boolean).slice(0,6);
+      issues.push({ type:"logica", sev:"alta", msg:`${sinRegion.length} licitación(es) excluida(s) por región desconocida`, detalle:`Prefijos sin mapear: ${prefixes.join(", ")}`, fix:"Agregar estos prefijos al organismos_region.json o KV store." });
+    }
+
+    if (currentSuc.espsFilter) {
+      const wrongEsp = lics.filter(l => !l.esps.some(e => currentSuc.espsFilter.includes(e)));
+      if (wrongEsp.length > 0) {
+        issues.push({ type:"logica", sev:"critica", fixType:"dental_especialidad", msg:`${wrongEsp.length} licitación(es) sin especialidad dental en sucursal dental`, detalle:`Ej: "${wrongEsp[0].nombre}" → especialidades: ${wrongEsp[0].esps.join(", ")||"ninguna"}`, fix:"Revisar espsFilter de la sucursal o el diccionario ESPS." });
+      }
+    }
+
+    const ids = lics.map(l => l.id);
+    const dupes = [...new Set(ids.filter((id,i) => ids.indexOf(id)!==i))];
+    if (dupes.length > 0) {
+      issues.push({ type:"datos", sev:"media", fixType:"duplicados", msg:`${dupes.length} ID(s) duplicado(s) en resultados`, detalle:dupes.slice(0,6).join(", "), fix:"Limpia la caché y recarga desde API." });
+    }
+
+    const sinCierre = lics.filter(l => !l.cierre);
+    if (sinCierre.length > 0) {
+      issues.push({ type:"datos", sev:"baja", msg:`${sinCierre.length} licitación(es) sin fecha de cierre`, detalle:`IDs: ${sinCierre.slice(0,4).map(l=>l.id).join(", ")}`, fix:"Carga el detalle individual para obtener la fecha." });
+    }
+
+    const fechaStr = lastFetch?.split("·")[0]?.trim();
+    if (fechaStr && !lastFetch.includes("API en vivo") && !lastFetch.includes("Caché")) {
+      try {
+        const [d2,m2,y2] = fechaStr.split("/").map(Number);
+        if (!isNaN(d2)&&!isNaN(m2)&&!isNaN(y2)) {
+          const diffDays = Math.floor((new Date()-new Date(y2,m2-1,d2))/86400000);
+          if (diffDays>=2) issues.push({ type:"datos", sev:diffDays>=5?"alta":"media", fixType:"cache_viejo", msg:`Datos con ${diffDays} días de antigüedad`, detalle:`Última actualización: ${lastFetch}`, fix:"Haz clic en '↺ Actualizar API'." });
+        }
+      } catch {}
+    }
+
+    const recentErrs = errorLog.filter(e => (new Date()-new Date(e.ts))<3600000);
+    if (recentErrs.length>0) {
+      issues.push({ type:"codigo", sev:"alta", msg:`${recentErrs.length} error(es) de ejecución en la última hora`, detalle:recentErrs.slice(-3).map(e=>`[${e.context}] ${e.message}`).join(" | "), fix:"Revisa el log de errores y usa '✦ Analizar con IA'." });
+    }
+
+    setDiagIssues(issues);
+    setLastDiag(new Date().toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));
+    return issues;
+  };
+
+  const diagnosticarConIA = async () => {
+    setDiagLoading(true); setDiagResult(null);
+    const issues = runDiagnostics();
+    const currentSuc = SUCURSALES[sucIdx];
+    const prompt = `Eres experto en el Panel de Licitaciones Sanadent/Sanasalud (Mercado Público, Chile).
+Analiza los problemas detectados y proporciona soluciones concretas y accionables.
+
+PROBLEMAS DETECTADOS (${issues.length} total):
+${issues.length===0?"Ninguno":issues.map(i=>`[${TIPO_DIAG[i.type]?.label?.toUpperCase()}/${i.sev.toUpperCase()}] ${i.msg}\n  Detalle: ${i.detalle}\n  Sugerencia: ${i.fix}`).join("\n\n")}
+
+ERRORES RUNTIME (últimos 5):
+${errorLog.slice(-5).map(e=>`[${e.ts.split("T")[1]?.slice(0,8)||""}] ${e.context}: ${e.message}`).join("\n")||"Ninguno"}
+
+ESTADO:
+- Sucursal: ${currentSuc.nombre} (${currentSuc.empresa}, región ${currentSuc.region})${currentSuc.espsFilter?" · Solo: "+currentSuc.espsFilter.join(", "):""}
+- Licitaciones visibles: ${lics.length} | Especialidades activas: ${[...activeEsps].length}/${Object.keys(ESPS).length}
+- Ticket API: ${ticket?"Configurado ✓":"NO configurado ✗"} | Última actualización: ${lastFetch}
+
+Para cada problema: 1. DIAGNÓSTICO (causa raíz) 2. IMPACTO 3. CORRECCIÓN (pasos exactos, máx. 3) 4. PRIORIDAD: 🔴CRÍTICA/🟠ALTA/🟡MEDIA/🟢BAJA
+Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
+    try {
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,messages:[{role:"user",content:prompt}]})});
+      const data=await res.json();
+      setDiagResult(data.content?.map(b=>b.text||"").join("")||"Sin respuesta.");
+    } catch(e){ setDiagResult("Error al conectar: "+e.message); capturarError("diagnosticarConIA",e); }
+    setDiagLoading(false);
+  };
+
+  // ── Correcciones automáticas ───────────────────────────────────────────────
+  const AUTO_FIXES = {
+    region_incorrecta: () => {
+      const s=SUCURSALES[sucIdx]; const before=lics.length;
+      const fixed=lics.filter(l=>!l.region||regionOk(l.region,s.region));
+      setLics(fixed);
+      setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:`✅ Región: eliminadas ${before-fixed.length} licitación(es) con región incorrecta`}]);
+      setTimeout(()=>runDiagnostics(),50);
+    },
+    dental_especialidad: () => {
+      const s=SUCURSALES[sucIdx]; if(!s.espsFilter) return;
+      const before=lics.length;
+      const fixed=lics.filter(l=>l.esps.some(e=>s.espsFilter.includes(e)));
+      setLics(fixed);
+      setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:`✅ Especialidad dental: eliminadas ${before-fixed.length} licitación(es) sin categoría dental`}]);
+      setTimeout(()=>runDiagnostics(),50);
+    },
+    duplicados: () => {
+      const seen=new Set(); const before=lics.length;
+      const fixed=lics.filter(l=>{if(seen.has(l.id))return false;seen.add(l.id);return true;});
+      setLics(fixed);
+      setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:`✅ Duplicados: eliminados ${before-fixed.length} registro(s) duplicado(s)`}]);
+      setTimeout(()=>runDiagnostics(),50);
+    },
+    cache_viejo: () => {
+      if(!ticket){setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:false,msg:"❌ Caché: necesita ticket de API. Configúralo primero."}]);return;}
+      actualizarDesdeAPI();
+      setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:"✅ Caché: actualización desde API iniciada"}]);
+    },
+  };
+
+  const autoCorregirTodo = () => {
+    const s=SUCURSALES[sucIdx]; let fixed=[...lics]; const msgs=[];
+    const wrongReg=fixed.filter(l=>l.region&&!regionOk(l.region,s.region));
+    if(wrongReg.length>0){fixed=fixed.filter(l=>!l.region||regionOk(l.region,s.region));msgs.push(`${wrongReg.length} región incorrecta`);}
+    if(s.espsFilter){const wrongEsp=fixed.filter(l=>!l.esps.some(e=>s.espsFilter.includes(e)));if(wrongEsp.length>0){fixed=fixed.filter(l=>l.esps.some(e=>s.espsFilter.includes(e)));msgs.push(`${wrongEsp.length} sin especialidad dental`);}}
+    const seen=new Set();const dB=fixed.length;fixed=fixed.filter(l=>{if(seen.has(l.id))return false;seen.add(l.id);return true;});if(dB>fixed.length)msgs.push(`${dB-fixed.length} duplicados`);
+    setLics(fixed);
+    setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:msgs.length>0,msg:msgs.length>0?`✅ Corrección completa: ${msgs.join(" | ")}`:"ℹ️ No había correcciones automáticas aplicables"}]);
+    const fechaStr=lastFetch?.split("·")[0]?.trim();
+    if(fechaStr&&!lastFetch.includes("API en vivo")&&!lastFetch.includes("Caché")&&ticket){try{const[d2,m2,y2]=fechaStr.split("/").map(Number);if(!isNaN(d2)&&Math.floor((new Date()-new Date(y2,m2-1,d2))/86400000)>=2){actualizarDesdeAPI();setCorrLog(p=>[...p,{ts:new Date().toLocaleTimeString("es-CL"),ok:true,msg:"✅ Iniciando actualización de caché…"}]);}}catch{}}
+    setTimeout(()=>runDiagnostics(),100);
   };
 
   // ── Derivados ──────────────────────────────────────────────────────────────
@@ -438,8 +599,9 @@ export default function App() {
     if (filtroFecha==="todas") return arr;
     const now=new Date(); const y=now.getFullYear(); const m=now.getMonth();
     return arr.filter(l=>{
-      if(!l.pub) return true; // sin fecha de publicación conocida, incluir siempre
+      if(!l.pub) return filtroFecha==="hoy" ? false : true;
       const p=new Date(l.pub);
+      if(filtroFecha==="hoy")          return l.pub===hoy();
       if(filtroFecha==="mes_actual")   return p.getFullYear()===y&&p.getMonth()===m;
       if(filtroFecha==="mes_anterior") { const pm=m===0?11:m-1; const py=m===0?y-1:y; return p.getFullYear()===py&&p.getMonth()===pm; }
       if(filtroFecha==="ultimos30")    return p>=new Date(now.getTime()-30*86400000);
@@ -456,6 +618,16 @@ export default function App() {
   const estCounts    = Object.entries(E_LIC).map(([k,v])=>({name:v.label,value:lics.filter(l=>l.estado===k).length,color:v.dot})).filter(d=>d.value>0);
   const cambiarModulo= m=>{ setModulo(m); setVista("dashboard"); setSubVista("lista"); setFiltro("todos"); setDetalle(null); };
   const empresasUnicas=[...new Set(SUCURSALES.map(s=>s.empresa))];
+
+  // Badge diagnóstico: issues críticos/altos en tiempo real
+  const diagBadgeCount = (()=>{
+    let n=0;
+    if(!ticket) n++;
+    if(lics.some(l=>l.region&&!regionOk(l.region,suc.region))) n++;
+    if(SNAPSHOT_RAW.some(l=>(l.region===undefined||l.region===null)&&isRel(l.nombre||l.Nombre||"",[...activeEsps]))) n++;
+    if(errorLog.some(e=>(new Date()-new Date(e.ts))<3600000)) n++;
+    return n;
+  })();
 
   // ── Componentes ────────────────────────────────────────────────────────────
   const Badge=({estado,map})=>{ const e=(map||E_LIC)[estado]||E_LIC.publicada; return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:e.bg,color:e.color,borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:500,whiteSpace:"nowrap"}}><span style={{width:6,height:6,borderRadius:"50%",background:e.dot,flexShrink:0}}/>{e.label}</span>; };
@@ -527,8 +699,10 @@ export default function App() {
 
       {/* Tabs módulo */}
       <div style={{display:"flex",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
-        {[["licitaciones","📋 Licitaciones",lics.length],["compras_agiles","⚡ Compras ágiles",casRegion.length],["seguimiento","🎯 Mis participaciones",misP.length]].map(([k,label,n])=>(
-          <button key={k} onClick={()=>cambiarModulo(k)} style={mBtn(modulo===k)}>{label} {n>0&&<span style={{fontSize:11,background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",borderRadius:20,padding:"1px 7px",marginLeft:4,fontWeight:400}}>{n}</span>}</button>
+        {[["licitaciones","📋 Licitaciones",lics.length,null],["compras_agiles","⚡ Compras ágiles",casRegion.length,null],["seguimiento","🎯 Mis participaciones",misP.length,null],["diagnostico","🔧 Diagnóstico",diagBadgeCount,"diag"]].map(([k,label,n,tipo])=>(
+          <button key={k} onClick={()=>{cambiarModulo(k);if(k==="diagnostico")runDiagnostics();}} style={mBtn(modulo===k)}>
+            {label} {n>0&&<span style={{fontSize:11,background:tipo==="diag"?"#FCEBEB":"var(--color-background-secondary)",color:tipo==="diag"?"#A32D2D":"var(--color-text-tertiary)",borderRadius:20,padding:"1px 7px",marginLeft:4,fontWeight:tipo==="diag"?600:400}}>{n}</span>}
+          </button>
         ))}
       </div>
 
@@ -565,7 +739,7 @@ export default function App() {
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 <span style={{fontSize:12,fontWeight:600,color:"var(--color-text-secondary)",whiteSpace:"nowrap"}}>📅 Publicación:</span>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {[["todas","Todas"],["mes_actual","Mes actual"],["mes_anterior","Mes anterior"],["ultimos30","Últimos 30 días"],["rango","Rango"]].map(([k,l])=>(
+                  {[["todas","Todas"],["hoy","🔔 Hoy"],["mes_actual","Mes actual"],["mes_anterior","Mes anterior"],["ultimos30","Últimos 30 días"],["rango","Rango"]].map(([k,l])=>(
                     <button key={k} onClick={()=>setFiltroFecha(k)} style={{padding:"4px 11px",borderRadius:20,border:`0.5px solid ${filtroFecha===k?"#185FA5":"var(--color-border-secondary)"}`,background:filtroFecha===k?"#185FA5":"var(--color-background-primary)",color:filtroFecha===k?"#fff":"var(--color-text-primary)",fontWeight:filtroFecha===k?600:400,fontSize:12,cursor:"pointer"}}>{l}</button>
                   ))}
                 </div>
@@ -609,7 +783,10 @@ export default function App() {
                               <span style={{fontSize:13,fontWeight:600}}>{lic.nombre}</span><Badge estado={lic.estado}/><BtnP item={lic} tipo="lic"/>
                             </div>
                             {lic.org&&<div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:3}}>{lic.org}</div>}
-                            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><EspTag esps={lic.esps}/></div>
+                            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                              <EspTag esps={lic.esps}/>
+                              {lic.pub&&<span style={{fontSize:10,color:"var(--color-text-tertiary)",background:"var(--color-background-secondary)",borderRadius:20,padding:"1px 7px",whiteSpace:"nowrap"}}>📅 Pub. {fmtD(lic.pub)}</span>}
+                            </div>
                             <div style={{fontSize:14,fontWeight:700,color:"#185FA5",marginBottom:2}}>
                               {montoStr(lic.tipo,lic.monto)}
                               {!lic.monto&&<span style={{fontSize:10,fontWeight:400,color:"var(--color-text-tertiary)",marginLeft:4}}>*estimado</span>}
@@ -752,6 +929,59 @@ export default function App() {
               </>
             }
           </>
+        )}
+
+        {/* ── DIAGNÓSTICO ── */}
+        {modulo==="diagnostico"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <span style={{fontSize:14,fontWeight:600}}>Panel de Diagnóstico</span>
+                {lastDiag&&<span style={{fontSize:11,color:"var(--color-text-tertiary)",marginLeft:10}}>Revisado a las {lastDiag}</span>}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={runDiagnostics} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 14px",fontSize:12,cursor:"pointer",color:"var(--color-text-primary)",fontWeight:500}}>↺ Ejecutar diagnóstico</button>
+                {diagIssues.some(i=>i.fixType)&&<button onClick={autoCorregirTodo} style={{background:"#3B6D11",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,cursor:"pointer",color:"#fff",fontWeight:600}}>⚡ Corregir todo automáticamente</button>}
+                <button onClick={diagnosticarConIA} disabled={diagLoading} style={{background:"#1a1a1a",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,cursor:diagLoading?"wait":"pointer",color:"#fff",fontWeight:500}}>{diagLoading?"Analizando…":"✦ Analizar con IA"}</button>
+              </div>
+            </div>
+
+            {lastDiag&&(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginBottom:14}}>
+                {Object.entries(SEV).map(([k,v])=>{const cnt=diagIssues.filter(i=>i.sev===k).length;return <div key={k} style={{background:cnt>0?v.bg:"var(--color-background-secondary)",borderRadius:10,padding:"10px 13px",border:`0.5px solid ${cnt>0?v.dot:"var(--color-border-tertiary)"}`}}><div style={{fontSize:11,color:cnt>0?v.color:"var(--color-text-tertiary)",marginBottom:4,fontWeight:600}}>{v.icon} {v.label}</div><div style={{fontSize:22,fontWeight:700,color:cnt>0?v.color:"var(--color-text-tertiary)",lineHeight:1}}>{cnt}</div></div>;})}
+              </div>
+            )}
+
+            {!lastDiag
+              ?<div style={{textAlign:"center",padding:"3rem 0",color:"var(--color-text-tertiary)",fontSize:13}}><div style={{fontSize:32,marginBottom:12}}>🔧</div>Haz clic en "Ejecutar diagnóstico" para revisar el estado del panel.</div>
+              :diagIssues.length===0
+                ?<div style={{background:"#EAF3DE",borderRadius:10,padding:"18px 20px",display:"flex",alignItems:"center",gap:12,marginBottom:14}}><span style={{fontSize:24}}>✅</span><div><div style={{fontSize:13,fontWeight:600,color:"#3B6D11"}}>Todo en orden</div><div style={{fontSize:12,color:"#3B6D11",marginTop:2}}>8 verificaciones pasaron correctamente para {suc.nombre}.</div></div></div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                  {diagIssues.map((issue,i)=>{const s=SEV[issue.sev]||SEV.media;const t=TIPO_DIAG[issue.type]||TIPO_DIAG.datos;return <div key={i} style={{background:"var(--color-background-primary)",border:`0.5px solid ${s.dot}`,borderLeft:`3px solid ${s.dot}`,borderRadius:10,padding:"12px 15px"}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{background:s.bg,color:s.color,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600}}>{s.icon} {s.label}</span><span style={{background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",borderRadius:20,padding:"2px 9px",fontSize:11}}>{t.icon} {t.label}</span><span style={{fontSize:13,fontWeight:600,flex:1}}>{issue.msg}</span>{issue.fixType&&AUTO_FIXES[issue.fixType]&&<button onClick={()=>AUTO_FIXES[issue.fixType]()} style={{background:"#EAF3DE",border:"0.5px solid #639922",borderRadius:8,padding:"4px 11px",fontSize:11,cursor:"pointer",color:"#3B6D11",fontWeight:600,whiteSpace:"nowrap"}}>⚡ Corregir</button>}</div><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:8,lineHeight:1.5}}>{issue.detalle}</div><div style={{background:"#F8F8F5",borderRadius:7,padding:"7px 11px",fontSize:12,lineHeight:1.5}}><span style={{fontWeight:600,color:"#3B6D11"}}>💡 Corrección: </span>{issue.fix}</div></div>;})}
+                </div>
+            }
+
+            {diagResult&&(
+              <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"15px 17px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{fontSize:13,fontWeight:600}}>Análisis con IA</span><button onClick={()=>setDiagResult(null)} style={{background:"none",border:"none",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer",padding:0}}>↺ Volver a analizar</button></div>
+                <div style={{fontSize:13,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{diagResult}</div>
+              </div>
+            )}
+
+            {corrLog.length>0&&(
+              <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,overflow:"hidden",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 16px",borderBottom:"0.5px solid var(--color-border-tertiary)"}}><span style={{fontSize:13,fontWeight:600}}>Correcciones aplicadas <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:400}}>({corrLog.length})</span></span><button onClick={()=>setCorrLog([])} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:6,padding:"3px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-tertiary)"}}>Limpiar</button></div>
+                <div style={{padding:"8px 16px"}}>{corrLog.slice().reverse().map((c,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"70px 1fr",gap:10,padding:"5px 0",borderBottom:i<corrLog.length-1?"0.5px solid var(--color-border-tertiary)":"none"}}><span style={{fontSize:10,fontFamily:"monospace",color:"var(--color-text-tertiary)"}}>{c.ts}</span><span style={{fontSize:12,color:c.ok===false?"#A32D2D":c.ok===null?"#854F0B":"#3B6D11"}}>{c.msg}</span></div>)}</div>
+              </div>
+            )}
+
+            {errorLog.length>0&&(
+              <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,overflow:"hidden"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 16px",borderBottom:"0.5px solid var(--color-border-tertiary)"}}><span style={{fontSize:13,fontWeight:600}}>Log de errores <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:400}}>({errorLog.length})</span></span><button onClick={()=>setErrorLog([])} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:6,padding:"3px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-tertiary)"}}>Limpiar</button></div>
+                <div style={{padding:"8px 16px"}}>{errorLog.slice(-10).reverse().map((e,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"80px 140px 1fr",gap:10,padding:"6px 0",borderBottom:i<Math.min(errorLog.length,10)-1?"0.5px solid var(--color-border-tertiary)":"none"}}><span style={{fontSize:10,fontFamily:"monospace",color:"var(--color-text-tertiary)"}}>{e.ts.split("T")[1]?.slice(0,8)||"—"}</span><span style={{fontSize:11,color:"#854F0B",fontFamily:"monospace",wordBreak:"break-all"}}>{e.context}</span><span style={{fontSize:11,color:"var(--color-text-secondary)"}}>{e.message}</span></div>)}</div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── DETALLE LICITACIÓN ── */}
