@@ -26,7 +26,7 @@ const ESPS = {
   "Respiratorio":    { icon:"🫁", c:"#0891b2", terms:["espirometría","espirometria","función pulmonar","funcional respiratorio","capacidad pulmonar","óxido nítrico","feno","prueba broncodilatadora","prick test","alergia respiratoria"] },
   "Urología":        { icon:"🫘", c:"#7c3aed", terms:["urodinamia","urodinámica","cistoscopía","cistoscopia","uroflujometría","uroflujometria","cistometría","urología","urologia"] },
   "Gastroenterología":{  icon:"🩺", c:"#0f766e", terms:["endoscopía","endoscopia","colonoscopía","colonoscopia","gastroenterología","gastroenterologia","gastroscopía","gastroscopia","histopatología","histopatologia","biopsia digestiva","colonoscopia virtual","cápsula endoscópica"] },
-  "Medicina General":{ icon:"👨‍⚕️", c:"#378ADD", terms:["medicina general","consultas médicas","consulta medica","atención médica","atención ambulatoria","fonasa","telemedicina","prestaciones de salud","prestaciones médicas","prestaciones medicas","atención ambulatoria","copago","servicio médico especializado","consultas medicas especialistas"] },
+  "Medicina General":{ icon:"👨‍⚕️", c:"#378ADD", terms:["medicina general","consultas médicas","consulta medica","atención médica","atención ambulatoria","fonasa","telemedicina","prestaciones de salud","prestaciones médicas","prestaciones medicas","atención ambulatoria","servicio médico especializado","consultas medicas especialistas"] },
   "Odontología":     { icon:"🦷", c:"#EF9F27", terms:["odontología","odontologia","odontológico","odontologico","dental","servicio dental","atención dental","endodoncia","cirujano dentista","rehabilitación protésica","rehabilitacion protesica"] },
   "Rehabilitación":  { icon:"🦿", c:"#639922", terms:["kinesiología","kinesiologia","kinesio","rehabilitación","rehabilitacion","fisioterapia","terapia ocupacional","fonoaudiología","fonoaudiologia"] },
   "Laboratorio":     { icon:"🧪", c:"#888780", terms:["laboratorio clínico","laboratorio clinico","exámenes de laboratorio","hemograma","bioquímica","bioquimica","microbiología","microbiologia","anatomía patológica","anatomia patologica","histopatología","histopatologia","biopsia","prestaciones de laboratorio","convenio de suministro de exámenes externos de laboratorio"] },
@@ -338,9 +338,19 @@ export default function App() {
   useEffect(() => {
     // Cargar especialidades
     window.storage.get(SK_ESPS).then(r => {
-      const esps = r?.value ? new Set(JSON.parse(r.value)) : new Set(Object.keys(ESPS));
-      setActiveEsps(esps);
-    }).catch(() => {});
+      if (!r?.value) {
+        setActiveEsps(new Set(Object.keys(ESPS)));
+      } else {
+        const saved = new Set(JSON.parse(r.value));
+        // Mantener guardadas válidas + agregar especialidades nuevas automáticamente
+        const merged = new Set([
+          ...[...saved].filter(k => ESPS[k]),
+          ...Object.keys(ESPS).filter(k => !saved.has(k))
+        ]);
+        setActiveEsps(merged);
+        window.storage.set(SK_ESPS, JSON.stringify([...merged])).catch(()=>{});
+      }
+    }).catch(() => setActiveEsps(new Set(Object.keys(ESPS))));
 
     // Cargar ticket
     fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); window.storage.set("ss:ticket",d.ticket).catch(()=>{}); } else { window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
