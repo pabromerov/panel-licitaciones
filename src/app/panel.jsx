@@ -107,7 +107,7 @@ const procesarRaw = (raw, activeArr, sucRegion, espsFilter, sucObj=null) => raw
     }
     return true;
   })
-  .map(l => ({ id:l.id||l.CodigoExterno, nombre:l.nombre||l.Nombre, estado:getEstado(l.cod||l.CodigoEstado, l.cierre||l.FechaCierre), cierre:l.cierre||l.FechaCierre, tipo:getTipo(l.id||l.CodigoExterno), esps:getEsps(l.nombre||l.Nombre||""), org:l.org||null, region:l.region||null, monto:l.monto||null, pub:l.pub||null, preg:l.preg||null }))
+  .map(l => ({ id:l.id||l.CodigoExterno, nombre:l.nombre||l.Nombre, estado:(()=>{ const cod=l.cod??l.CodigoEstado; const ci=l.cierre||l.FechaCierre; if(cod!==undefined&&cod!==null) return getEstado(cod,ci); const ex=l.estado||"publicada"; return(ex==="publicada"||ex==="por_vencer")?getEstado(5,ci):ex; })(), cierre:l.cierre||l.FechaCierre, tipo:getTipo(l.id||l.CodigoExterno), esps:getEsps(l.nombre||l.Nombre||""), org:l.org||null, region:l.region||null, monto:l.monto||null, pub:l.pub||null, preg:l.preg||null }))
   .sort((a,b) => new Date(a.cierre)-new Date(b.cierre));
 
 const exportXLSX = async (rows, tipo, suc, parts={}) => {
