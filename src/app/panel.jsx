@@ -110,12 +110,13 @@ const procesarRaw = (raw, activeArr, sucRegion, espsFilter, sucObj=null) => raw
   .map(l => ({ id:l.id||l.CodigoExterno, nombre:l.nombre||l.Nombre, estado:getEstado(l.cod||l.CodigoEstado, l.cierre||l.FechaCierre), cierre:l.cierre||l.FechaCierre, tipo:getTipo(l.id||l.CodigoExterno), esps:getEsps(l.nombre||l.Nombre||""), org:l.org||null, region:l.region||null, monto:l.monto||null, pub:l.pub||null, preg:l.preg||null }))
   .sort((a,b) => new Date(a.cierre)-new Date(b.cierre));
 
-const exportXLSX = async (rows, tipo, suc) => {
+const exportXLSX = async (rows, tipo, suc, parts={}) => {
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const UTM = 68000;
   const fmt = n => n ? "$ "+Number(n).toLocaleString("es-CL") : "Ver bases";
   const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
+  const partLabel = id => { const p=parts[`lic:${id}`]; if(!p)return""; const m={presentada:"Presentada",en_evaluacion:"En evaluación",ganada:"Adjudicada a nosotros",perdida:"Adjudicada a otro",desierta:"Desierta",no_aplica:"No aplica",revocada:"Revocada"}; return m[p.estado]||""; };
   const dias = f => f?Math.ceil((new Date((f||"").replace("T"," ").split(".")[0])-new Date())/86400000):null;
 
   // ── Hoja 1: Licitaciones ──────────────────────────────────────────────
@@ -125,7 +126,7 @@ const exportXLSX = async (rows, tipo, suc) => {
     l.tipo, l.estado==="publicada"?"Publicada":l.estado==="por_vencer"?"Por vencer":l.estado==="adjudicada"?"Adjudicada":l.estado==="desierta"?"Desierta":"Cerrada",
     fmtD(l.pub), fmtD(l.cierre),
     (()=>{const d=dias(l.cierre); return d!==null&&d>0?d+"d":d===0?"Hoy":"Cerrada";})(),
-    l.monto||"Ver bases", suc?.nombre||"—", "", "", "", "", ""
+    l.monto||"Ver bases", suc?.nombre||"—", partLabel(l.id), "", "", "", ""
   ]);
 
   const licWs = XLSX.utils.aoa_to_sheet([licHdrs,...licData]);
@@ -184,7 +185,7 @@ const exportXLSX = async (rows, tipo, suc) => {
     l.id, l.nombre, l.org||"—", (l.esps||[]).join(", "),
     fmtD(l.cierre),
     (()=>{const d=dias(l.cierre); return d!==null&&d>0?d:0;})(),
-    l.monto||"Ver bases", ""
+    l.monto||"Ver bases", partLabel(l.id)
   ]);
   const urgWs = XLSX.utils.aoa_to_sheet([
     ["⚠ LICITACIONES VIGENTES — ORDENADAS POR URGENCIA"],
@@ -376,7 +377,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.storage.get(`parts:${suc.rut}`).then(r => setParts(r?JSON.parse(r.value):{})).catch(()=>setParts({}));
+    window.storage.get(`parts:${suc.rut}`, true).then(r => setParts(r?JSON.parse(r.value):{})).catch(()=>setParts({}));
   }, [sucIdx]);
 
   const REGION_FULL = { "RM":"Región Metropolitana de Santiago", "Valparaíso":"Región de Valparaíso", "O'Higgins":"Región del Libertador General Bernardo O'Higgins" };
@@ -399,7 +400,7 @@ export default function App() {
   }, [activeEsps, sucIdx, apiRaw]);
 
   const saveEsps = async esps => { setActiveEsps(esps); try{ await window.storage.set(SK_ESPS,JSON.stringify([...esps])); }catch{} };
-  const saveParts = async p => { setParts(p); try{ await window.storage.set(`parts:${suc.rut}`,JSON.stringify(p)); }catch{} };
+  const saveParts = async p => { setParts(p); try{ await window.storage.set(`parts:${suc.rut}`,JSON.stringify(p), true); }catch{} };
   const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await window.storage.set("ss:ticket",c); }catch{} };
 
   const fetchDesdeAPI = async (silencioso=false) => {
@@ -685,6 +686,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
     : COMPRAS_AGILES.filter(c => c.region===suc.region);
   const casFiltered  = filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro);
   const misP         = Object.entries(parts);
+  const misP_eval    = misP.filter(([,v])=>v.estado==="en_evaluacion");
   const espCounts    = Object.keys(ESPS).map(k=>({name:k,value:lics.filter(l=>l.esps.includes(k)).length})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
   const estCounts    = Object.entries(E_LIC).map(([k,v])=>({name:v.label,value:lics.filter(l=>l.estado===k).length,color:v.dot})).filter(d=>d.value>0);
   const cambiarModulo= m=>{ setModulo(m); setVista("dashboard"); setSubVista("lista"); setFiltro("todos"); setDetalle(null); };
@@ -773,7 +775,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
 
       {/* Tabs módulo */}
       <div style={{display:"flex",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
-        {[["licitaciones","📋 Licitaciones",lics.length,null],["compras_agiles","⚡ Compras ágiles",casRegion.length,null],["seguimiento","🎯 Mis participaciones",misP.length,null],["diagnostico","🔧 Diagnóstico",diagBadgeCount,"diag"]].map(([k,label,n,tipo])=>(
+        {[["licitaciones","📋 Licitaciones",lics.length,null],["compras_agiles","⚡ Compras ágiles",casRegion.length,null],["seguimiento","🎯 Mis participaciones",misP_eval.length,null],["diagnostico","🔧 Diagnóstico",diagBadgeCount,"diag"]].map(([k,label,n,tipo])=>(
           <button key={k} onClick={()=>{cambiarModulo(k);if(k==="diagnostico")runDiagnostics();}} style={mBtn(modulo===k)}>
             {label} {n>0&&<span style={{fontSize:11,background:tipo==="diag"?"#FCEBEB":"var(--color-background-secondary)",color:tipo==="diag"?"#A32D2D":"var(--color-text-tertiary)",borderRadius:20,padding:"1px 7px",marginLeft:4,fontWeight:tipo==="diag"?600:400}}>{n}</span>}
           </button>
@@ -792,7 +794,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                 <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{lastFetch} · {lics.length} licitaciones</span>
                 <button onClick={actualizarDesdeAPI} disabled={loading} style={{display:"flex",alignItems:"center",gap:5,background:"#185FA5",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:loading?"wait":"pointer",color:"#fff",fontWeight:500}}>{loading?"Actualizando…":"↺ Actualizar API"}</button>
                 <button onClick={()=>setShowEsps(!showEsps)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>🔍 Especialidades ({activeEsps.size})</button>
-                <button onClick={()=>exportXLSX(licsFiltered,"licitaciones",suc)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
+                <button onClick={()=>exportXLSX(licsFiltered,"licitaciones",suc,parts)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
               </div>
             </div>
 
@@ -971,11 +973,11 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
               </div>
               <button onClick={()=>exportXLSX(misP.map(([,v])=>v),"participaciones",suc)} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#16A34A",fontWeight:600}}>⬇ Excel</button>
             </div>
-            {misP.length===0
+            {misP_eval.length===0
               ?<div style={{textAlign:"center",padding:"3rem 0",color:"var(--color-text-tertiary)",fontSize:13}}><div style={{fontSize:32,marginBottom:12}}>📋</div>Sin participaciones para {suc.nombre}.<br/>Usa "+ Registrar" en cualquier licitación.</div>
               :<>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {misP.map(([k,v])=>(
+                  {misP_eval.map(([k,v])=>(
                     <div key={k} style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 15px"}}>
                       <div style={{display:"flex",justifyContent:"space-between",gap:10,marginBottom:8,flexWrap:"wrap"}}>
                         <div style={{flex:1}}>
@@ -997,8 +999,8 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                   ))}
                 </div>
                 <div style={{marginTop:10,padding:"12px 14px",background:"var(--color-background-secondary)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)"}}>{misP.length} participacion{misP.length!==1?"es":""}</span>
-                  <span style={{fontSize:13,fontWeight:700,color:"#185FA5"}}>Total involucrado: {fmt(misP.reduce((s,[,v])=>s+(v.monto||0),0))}</span>
+                  <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)"}}>{misP_eval.length} en evaluación</span>
+                  <span style={{fontSize:13,fontWeight:700,color:"#185FA5"}}>Total involucrado: {fmt(misP_eval.reduce((s,[,v])=>s+(v.monto||0),0))}</span>
                 </div>
               </>
             }
