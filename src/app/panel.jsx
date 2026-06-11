@@ -71,7 +71,7 @@ const regionOkSuc = (licRegion, suc) => {
 
 const getTipo  = cod => { const p=(cod||"").split("-"); const last=p[p.length-1]||""; const m=last.match(/^([A-Za-z]+\d?)(\d{2})$/); return m?m[1].toUpperCase():last.replace(/\d+$/,"").toUpperCase(); };
 const TIPO_DESC= { L1:"<100 UTM", LE:"100–1.000 UTM", LP:"1.000–5.000 UTM", LR:">5.000 UTM", B1:"Lic.Privada", B2:"Lic.Privada", CO:"Contrato" };
-const getEstado= (cod,cierre) => { const c=Number(cod); if(c===5){ const d=Math.ceil((new Date((cierre||"").replace("T"," ").split(".")[0])-new Date())/86400000); return d<=7&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[c]||"publicada"; };
+const getEstado= (cod,cierre) => { const c=Number(cod); if(c===5){ const d=Math.ceil((new Date((cierre||"").replace("T"," ").split(".")[0])-new Date())/86400000); return d<=3&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[c]||"publicada"; };
 const UTM = 68000;
 const fmt  = n => n?"$ "+Number(n).toLocaleString("es-CL"):"—";
 const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
@@ -686,7 +686,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
     : COMPRAS_AGILES.filter(c => c.region===suc.region);
   const casFiltered  = filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro);
   const misP         = Object.entries(parts);
-  const misP_eval    = misP.filter(([,v])=>v.estado==="en_evaluacion");
+  const misP_eval    = misP.filter(([,v])=>["en_evaluacion","presentada"].includes(v.estado));
   const espCounts    = Object.keys(ESPS).map(k=>({name:k,value:lics.filter(l=>l.esps.includes(k)).length})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
   const estCounts    = Object.entries(E_LIC).map(([k,v])=>({name:v.label,value:lics.filter(l=>l.estado===k).length,color:v.dot})).filter(d=>d.value>0);
   const cambiarModulo= m=>{ setModulo(m); setVista("dashboard"); setSubVista("lista"); setFiltro("todos"); setDetalle(null); };
