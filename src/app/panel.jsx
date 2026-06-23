@@ -1101,14 +1101,36 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                 </div>
               </div>
               <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"15px 17px",marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:analisis[key]?12:0}}>
-                  <div><span style={{fontSize:13,fontWeight:600}}>Análisis con IA</span><span style={{fontSize:11,color:"var(--color-text-tertiary)",marginLeft:8}}>para {suc.nombre}</span></div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <span style={{fontSize:13,fontWeight:600}}>Prestaciones solicitadas {items.length>0&&<span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)",marginLeft:6}}>({items.length} ítems)</span>}</span>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
                     {!dd&&<button onClick={()=>fetchDetalle(detalle.id)} disabled={loadDet} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-secondary)"}}>{loadDet?"Cargando…":"↺ Cargar detalle"}</button>}
-                    {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"lic",dd)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:cargIA[key]?"wait":"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":`✦ Analizar con ${AI_MODELS.find(m=>m.id===aiModel)?.label||aiModel} ↗`}</button>}
+                    <button onClick={()=>{
+                      const itemsTxt = items.length>0
+                        ? items.map((it,i)=>`${i+1}. ${it.Descripcion||it.NombreProducto||"—"} | Cant: ${it.Cantidad||"—"} ${it.UnidadMedida||""} | P.Unit: ${it.PrecioUnitario>0?fmt(it.PrecioUnitario):"No publicado"}`).join("\n")
+                        : "(Carga el detalle para ver ítems)";
+                      const txt = `Analiza esta licitación pública de salud en Chile.\n\nLICITACIÓN: ${detalle.nombre}\nID: ${detalle.id} | Tipo: ${detalle.tipo} (${TIPO_DESC[detalle.tipo]||""})\nOrganismo: ${org}\nRegión: ${region2}\nMonto estimado: ${montoStr(detalle.tipo,monto)}\nPublicación: ${fPub||"—"} | Cierre: ${fmtD(fCie)}${d!==null&&d>0?" (en "+d+" días)":""}\nPreguntas hasta: ${fPre||"No aplica"}\nEspecialidades: ${detalle.esps?.join(", ")||"—"}\n\nDESCRIPCIÓN:\n${dd?.Descripcion||"(ver bases)"}\n\nÍTEMS SOLICITADOS:\n${itemsTxt}\n\nSUCURSAL: ${suc.nombre} | ${suc.empresa} | ${suc.ciudad}\n\nPor favor analiza:\n1. Requisitos probables (✅ cumples / ❌ no cumples / ❓ verificar)\n2. Documentos a preparar\n3. Pasos inmediatos (el primero siempre: descargar bases con código ${detalle.id})\n4. Recomendación: SÍ / NO / CONDICIONADO`;
+                      navigator.clipboard.writeText(txt).then(()=>{setCopiedId("__resumen__"+detalle.id);setTimeout(()=>setCopiedId(null),2500);});
+                    }} style={{display:"inline-flex",alignItems:"center",gap:5,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:copiedId==="__resumen__"+detalle.id?"#3B6D11":"var(--color-text-primary)",fontWeight:500}}>
+                      {copiedId==="__resumen__"+detalle.id?"✓ Copiado":"📋 Copiar para analizar"}
+                    </button>
                   </div>
                 </div>
-                {analisis[key]&&<div><div style={{fontSize:13,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{analisis[key]}</div><button onClick={()=>setAnalisis(p=>{const n={...p};delete n[key];return n;})} style={{marginTop:10,background:"none",border:"none",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer",padding:0}}>↺ Volver a analizar</button></div>}
+                {items.length>0
+                  ?<div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 70px 80px 110px",padding:"7px 0",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:11,color:"var(--color-text-tertiary)",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+                      <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unidad</span><span style={{textAlign:"right"}}>P. Unitario</span>
+                    </div>
+                    {items.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 80px 110px",padding:"9px 0",borderBottom:i<items.length-1?"0.5px solid var(--color-border-tertiary)":"none",alignItems:"center"}}>
+                      <span style={{fontSize:13}}>{it.Descripcion||it.NombreProducto||"—"}</span>
+                      <span style={{fontSize:13,fontWeight:600,textAlign:"right"}}>{it.Cantidad||"—"}</span>
+                      <span style={{fontSize:12,color:"var(--color-text-secondary)",textAlign:"right"}}>{it.UnidadMedida||"—"}</span>
+                      <span style={{fontSize:12,textAlign:"right",color:it.PrecioUnitario>0?"var(--color-text-primary)":"var(--color-text-tertiary)"}}>{it.PrecioUnitario>0?fmt(it.PrecioUnitario):"—"}</span>
+                    </div>)}
+                    {items.some(it=>it.PrecioUnitario>0)&&<div style={{display:"flex",justifyContent:"flex-end",paddingTop:8,borderTop:"0.5px solid var(--color-border-secondary)",marginTop:4}}><span style={{fontSize:13,fontWeight:700,color:"#185FA5"}}>Total ítems: {fmt(items.reduce((s,it)=>s+(it.PrecioUnitario>0&&it.Cantidad>0?it.PrecioUnitario*it.Cantidad:0),0))}</span></div>}
+                  </div>
+                  :<div style={{color:"var(--color-text-tertiary)",fontSize:13,padding:"8px 0"}}>{loadDet?"Cargando ítems…":dd?"Sin ítems publicados en bases":"Carga el detalle para ver ítems (↺ Cargar detalle)"}</div>
+                }
               </div>
               <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,overflow:"hidden"}}>
                 <div style={{display:"flex",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
@@ -1152,11 +1174,16 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                 </div>
               </div>
               <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"15px 17px",marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:analisis[key]?12:0}}>
-                  <span style={{fontSize:13,fontWeight:600}}>Análisis con IA</span>
-                  {!analisis[key]&&<button onClick={()=>analizarIA(detalle,"ca",null)} disabled={cargIA[key]} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"7px 14px",fontSize:12,cursor:"pointer",color:"var(--color-text-primary)",fontWeight:500}}>{cargIA[key]?"Analizando…":`✦ Analizar con ${AI_MODELS.find(m=>m.id===aiModel)?.label||aiModel} ↗`}</button>}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:0}}>
+                  <span style={{fontSize:13,fontWeight:600}}>Resumen para análisis</span>
+                  <button onClick={()=>{
+                    const itemsTxt = detalle.items.map((it,i)=>`${i+1}. ${it.desc} | Cant: ${it.cant} ${it.unidad}`).join("\n");
+                    const txt = `Analiza esta compra ágil de salud en Chile.\n\nCOMPRA: ${detalle.nombre}\nID: ${detalle.id}\nOrganismo: ${detalle.organismo}\nMonto máximo: ${fmt(detalle.monto)}\nCategoría: ${detalle.categoria}\nCierre: ${detalle.cierre}\n\nÍTEMS:\n${itemsTxt}\n\nSUCURSAL: ${suc.nombre} | ${suc.empresa} | ${suc.ciudad}\n\nAnaliza brevemente:\n1. Recomendación: SÍ / NO / CONDICIONADO\n2. Consideraciones clave (máx. 3)\n3. Acción inmediata`;
+                    navigator.clipboard.writeText(txt).then(()=>{setCopiedId("__resumen__"+detalle.id);setTimeout(()=>setCopiedId(null),2500);});
+                  }} style={{display:"inline-flex",alignItems:"center",gap:5,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",color:copiedId==="__resumen__"+detalle.id?"#3B6D11":"var(--color-text-primary)",fontWeight:500}}>
+                    {copiedId==="__resumen__"+detalle.id?"✓ Copiado":"📋 Copiar para analizar"}
+                  </button>
                 </div>
-                {analisis[key]&&<div><div style={{fontSize:13,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{analisis[key]}</div><button onClick={()=>setAnalisis(p=>{const n={...p};delete n[key];return n;})} style={{marginTop:10,background:"none",border:"none",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer",padding:0}}>↺ Volver a analizar</button></div>}
               </div>
               <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,overflow:"hidden"}}>
                 <div style={{padding:"11px 17px",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:13,fontWeight:600}}>Ítems solicitados</div>
