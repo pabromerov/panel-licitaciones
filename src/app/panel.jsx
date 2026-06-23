@@ -338,7 +338,7 @@ export default function App() {
 
   useEffect(() => {
     // Cargar especialidades
-    window.storage.get(SK_ESPS).then(r => {
+    appStore.get(SK_ESPS).then(r => {
       if (!r?.value) {
         setActiveEsps(new Set(Object.keys(ESPS)));
       } else {
@@ -349,15 +349,15 @@ export default function App() {
           ...Object.keys(ESPS).filter(k => !saved.has(k))
         ]);
         setActiveEsps(merged);
-        window.storage.set(SK_ESPS, JSON.stringify([...merged])).catch(()=>{});
+        appStore.set(SK_ESPS, JSON.stringify([...merged])).catch(()=>{});
       }
     }).catch(() => setActiveEsps(new Set(Object.keys(ESPS))));
 
     // Cargar ticket
-    fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); window.storage.set("ss:ticket",d.ticket).catch(()=>{}); } else { window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ window.storage.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
+    fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); appStore.set("ss:ticket",d.ticket).catch(()=>{}); } else { appStore.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ appStore.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
 
     // Cargar caché o hacer fetch automático
-    window.storage.get(SK_CACHE).then(r => {
+    appStore.get(SK_CACHE).then(r => {
       if (r?.value) {
         const cache = JSON.parse(r.value);
         const edad = Date.now() - (cache.ts || 0);
@@ -377,7 +377,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.storage.get(`parts:${suc.rut}`, true).then(r => setParts(r?JSON.parse(r.value):{})).catch(()=>setParts({}));
+    fetch(`/api/participaciones?rut=${encodeURIComponent(suc.rut)}`).then(r=>r.json()).then(d=>setParts(d.data||{})).catch(()=>setParts({}));
   }, [sucIdx]);
 
   const REGION_FULL = { "RM":"Región Metropolitana de Santiago", "Valparaíso":"Región de Valparaíso", "O'Higgins":"Región del Libertador General Bernardo O'Higgins" };
@@ -399,9 +399,13 @@ export default function App() {
     setPage(1);
   }, [activeEsps, sucIdx, apiRaw]);
 
-  const saveEsps = async esps => { setActiveEsps(esps); try{ await window.storage.set(SK_ESPS,JSON.stringify([...esps])); }catch{} };
-  const saveParts = async p => { setParts(p); try{ await window.storage.set(`parts:${suc.rut}`,JSON.stringify(p), true); }catch{} };
-  const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await window.storage.set("ss:ticket",c); }catch{} };
+  const appStore = {
+    get: async (key) => { if(typeof window!=="undefined"&&window.storage){try{return await window.storage.get(key);}catch{}} const v=localStorage.getItem(key); return v?{value:v}:null; },
+    set: async (key, value) => { if(typeof window!=="undefined"&&window.storage){try{return await window.storage.set(key,value);}catch{}} try{localStorage.setItem(key,String(value));}catch{}; }
+  };
+  const saveEsps = async esps => { setActiveEsps(esps); try{ await appStore.set(SK_ESPS,JSON.stringify([...esps])); }catch{} };
+  const saveParts = async p => { setParts(p); try{ await fetch("/api/participaciones",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rut:suc.rut,data:p})}); }catch{} };
+  const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await appStore.set("ss:ticket",c); }catch{} };
 
   const fetchDesdeAPI = async (silencioso=false) => {
     if (!silencioso) { setLoading(true); setApiErr(null); }
@@ -435,7 +439,7 @@ export default function App() {
           setLastFetch(ts+" · API en vivo");
           setPage(1);
           // Guardar en caché con timestamp
-          try { await window.storage.set(SK_CACHE, JSON.stringify({ ts: Date.now(), data: nuevoRaw })); } catch {}
+          try { await appStore.set(SK_CACHE, JSON.stringify({ ts: Date.now(), data: nuevoRaw })); } catch {}
         } else if (!silencioso) { setApiErr("No se encontraron licitaciones con región identificada."); }
       } else if (!silencioso) { setApiErr("No se pudo conectar a la API."); }
     } catch(e){ if (!silencioso) setApiErr("Error: "+e.message); }
@@ -1168,5 +1172,6 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
     </div>
   );
 }
+
 
 
