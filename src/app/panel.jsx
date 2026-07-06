@@ -80,8 +80,8 @@ const hoy  = () => new Date().toISOString().split("T")[0];
 const montoStr = (tipo, monto) => {
   if (monto) return fmt(monto);
   const topes = { L1:100*UTM, LE:1000*UTM, LP:5000*UTM, B1:1000*UTM, B2:2000*UTM };
-  if (topes[tipo]) return `Hasta ${fmt(topes[tipo])} aprox.`;
-  if (tipo==="LR") return "Más de "+fmt(5000*UTM)+" aprox.";
+  if (topes[tipo]) return `Hasta ${fmt(topes[tipo])} (tramo legal, no bases)`;
+  if (tipo==="LR") return "Más de "+fmt(5000*UTM)+" (tramo legal, no bases)";
   return "Ver bases";
 };
 
@@ -433,6 +433,26 @@ export default function App() {
               : (snapshotPub[l.CodigoExterno] || null);
             nuevoRaw[reg].push({ id:l.CodigoExterno, nombre:(l.Nombre||"").trim(), estado:getEstado(l.CodigoEstado, l.FechaCierre), cierre:l.FechaCierre, tipo:getTipo(l.CodigoExterno), esps:getEsps(l.Nombre||""), org:null, region:reg, monto:l.MontoEstimado||null, pub, preg:null });
           });
+                // Enriquecer con MontoEstimado real via detalle, en lotes de 5 con
+                // pausa de 2s entre lotes. El listado bulk (estado=activas) NUNCA trae
+                // MontoEstimado; sin este paso, montoStr() siempre cae al tramo UTM
+                // generico por tipo de licitacion, incluso cuando ChileCompra si
+                // publico el monto real (VisibilidadMonto=1).
+                const candidatas = Object.values(nuevoRaw).flat();
+                for (let i = 0; i < candidatas.length; i += 5) {
+                            const lote = candidatas.slice(i, i + 5);
+                            await Promise.all(lote.map(async c => {
+                                          try {
+                                                          const r = await fetch(`/api/licitaciones?codigo=${c.id}`);
+                                                          const d = await r.json();
+                                                          const det = d?.Listado?.[0];
+                                                          if (det?.VisibilidadMonto === 1 && det?.MontoEstimado) {
+                                                                            c.monto = det.MontoEstimado;
+                                                          }
+                                          } catch {}
+                            }));
+                            if (i + 5 < candidatas.length) await new Promise(res => setTimeout(res, 2000));
+                }
         if (Object.keys(nuevoRaw).length > 0) {
           setApiRaw(nuevoRaw);
           const ts = new Date().toLocaleDateString("es-CL");
@@ -455,14 +475,18 @@ export default function App() {
     try{ const r=await fetch(url); const d=await r.json(); item=d?.Listado?.[0]; }catch{}
     if(item) {
       setDetData(p=>({...p,[id]:item}));
-      // Actualizar pub y org en lics con los datos del detalle (que sí los tiene)
+            // Actualizar pub, org y monto en lics con los datos del detalle. La API bulk
+            // (estado=activas) NUNCA trae MontoEstimado; sin este merge, el monto real
+            // quedaba sin usarse aunque VisibilidadMonto=1 y existiera un monto publicado.
       const fechaPub = item?.Fechas?.FechaPublicacion;
       const org = item?.Comprador?.NombreOrganismo;
-      if (fechaPub || org) {
+            const montoReal = item?.VisibilidadMonto === 1 ? (item?.MontoEstimado || null) : null;
+            if (fechaPub || org || montoReal) {
         setLics(prev => prev.map(l => l.id === id ? {
           ...l,
           ...(fechaPub && !l.pub ? { pub: fechaPub.split("T")[0] } : {}),
           ...(org && !l.org ? { org } : {}),
+                    ...(montoReal ? { monto: montoReal } : {}),
         } : l));
       }
     }
