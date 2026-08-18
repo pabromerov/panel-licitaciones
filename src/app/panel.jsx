@@ -71,11 +71,22 @@ const regionOkSuc = (licRegion, suc) => {
 
 const getTipo  = cod => { const p=(cod||"").split("-"); const last=p[p.length-1]||""; const m=last.match(/^([A-Za-z]+\d?)(\d{2})$/); return m?m[1].toUpperCase():last.replace(/\d+$/,"").toUpperCase(); };
 const TIPO_DESC= { L1:"<100 UTM", LE:"100–1.000 UTM", LP:"1.000–5.000 UTM", LR:">5.000 UTM", B1:"Lic.Privada", B2:"Lic.Privada", CO:"Contrato" };
-const getEstado= (cod,cierre) => { const c=Number(cod); if(c===5){ const d=Math.ceil((new Date((cierre||"").replace("T"," ").split(".")[0])-new Date())/86400000); return d<=3&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[c]||"publicada"; };
+const getEstado= (cod,cierre) => { const c=Number(cod); if(c===5){ const d=dias(cierre); return d!==null&&d<=3&&d>0?"por_vencer":"publicada"; } return {6:"cerrada",7:"desierta",8:"adjudicada",18:"desierta",19:"desierta"}[c]||"publicada"; };
 const UTM = 68000;
 const fmt  = n => n?"$ "+Number(n).toLocaleString("es-CL"):"—";
 const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
-const dias = f => f?Math.ceil((new Date((f||"").replace("T"," ").split(".")[0])-new Date())/86400000):null;
+// dias() compara solo la FECHA de calendario (ignora la hora), no la diferencia
+// exacta en milisegundos. Antes usaba Math.ceil() sobre el tiempo exacto, lo que
+// hacía que una licitación que cierra hoy casi siempre mostrara "Cierra en 1d" en
+// vez de "Hoy" (cualquier fracción de día positiva se redondeaba hacia arriba).
+const dias = f => {
+  if (!f) return null;
+  const c = new Date((f||"").replace("T"," ").split(".")[0]);
+  const h = new Date();
+  const cFecha = new Date(c.getFullYear(), c.getMonth(), c.getDate());
+  const hFecha = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  return Math.round((cFecha - hFecha) / 86400000);
+};
 const hoy  = () => new Date().toISOString().split("T")[0];
 const montoStr = (tipo, monto) => {
   if (monto) return fmt(monto);
@@ -117,7 +128,15 @@ const exportXLSX = async (rows, tipo, suc, parts={}) => {
   const fmt = n => n ? "$ "+Number(n).toLocaleString("es-CL") : "Ver bases";
   const fmtD = s => s?(s.split("T")[0]||"").split("-").reverse().join("/"):"—";
   const partLabel = id => { const p=parts[`lic:${id}`]; if(!p)return""; const m={presentada:"Presentada",en_evaluacion:"En evaluación",ganada:"Adjudicada a nosotros",perdida:"Adjudicada a otro",desierta:"Desierta",no_aplica:"No aplica",revocada:"Revocada"}; return m[p.estado]||""; };
-  const dias = f => f?Math.ceil((new Date((f||"").replace("T"," ").split(".")[0])-new Date())/86400000):null;
+  // Misma lógica que la versión global: compara fecha de calendario, no tiempo exacto.
+  const dias = f => {
+    if (!f) return null;
+    const c = new Date((f||"").replace("T"," ").split(".")[0]);
+    const h = new Date();
+    const cFecha = new Date(c.getFullYear(), c.getMonth(), c.getDate());
+    const hFecha = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+    return Math.round((cFecha - hFecha) / 86400000);
+  };
 
   // ── Hoja 1: Licitaciones ──────────────────────────────────────────────
   const licHdrs = ["N°","ID Licitación","Nombre Licitación","Organismo","Especialidades","Tipo","Estado","F. Publicación","F. Cierre","Días Restantes","Monto Estimado","Sucursal","Estado Gestión","Responsable","F. Postulación","Monto Ofertado","Observaciones"];
@@ -302,8 +321,6 @@ export default function App() {
   const [filtroFecha,setFiltroFecha]= useState("todas");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
-  const [analisis,   setAnalisis]   = useState({});
-  const [cargIA,     setCargIA]     = useState({});
   const [parts,      setParts]      = useState({});
   const [modal,      setModal]      = useState(null);
   const [mEst,       setMEst]       = useState("presentada");
@@ -327,7 +344,6 @@ export default function App() {
   const [diagLoading,setDiagLoading]= useState(false);
   const [lastDiag,   setLastDiag]   = useState(null);
   const [corrLog,    setCorrLog]    = useState([]);
-  const [aiModel,    setAiModel]    = useState("gpt-4o");
   const [apiRaw,     setApiRaw]     = useState({}); // { region -> listado normalizado } de la API
 
   const suc = SUCURSALES[sucIdx];
@@ -511,51 +527,21 @@ export default function App() {
   };
   const quitarP = async k => { const n={...parts}; delete n[k]; await saveParts(n); };
 
-  // ── Helper IA (OpenAI vía proxy o Claude directo) ─────────────────────────
-  const AI_MODELS = [
-    { id:"gpt-4o",      label:"GPT-4o",      icon:"🟢", desc:"Más potente" },
-    { id:"gpt-4o-mini", label:"GPT-4o mini", icon:"⚡", desc:"Más rápido" },
-    { id:"claude",      label:"Claude",       icon:"🟣", desc:"Anthropic" },
-  ];
-
+  // ── Helper IA (usado por el diagnóstico interno del panel) ─────────────────
+  // Antes elegía entre GPT-4o/GPT-4o mini (vía /api/analisis) o Claude (llamada
+  // directa a api.anthropic.com sin API key, que siempre fallaba por falta de
+  // autenticación). El selector de modelos se quitó porque ninguna opción
+  // funcionaba de forma confiable; se deja solo la vía que sí tiene una key
+  // configurada en Vercel (OPENAI_API_KEY) para el proxy /api/analisis.
   const callAI = async (prompt) => {
-    if (aiModel === "claude") {
-      // Llamada directa a Anthropic (funciona en entornos Claude.ai)
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1500, messages:[{ role:"user", content:prompt }] }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-      return data.content?.map(b => b.text || "").join("") || "Sin respuesta.";
-    } else {
-      // OpenAI vía proxy serverless /api/analisis (key segura en servidor)
-      const res = await fetch("/api/analisis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model: aiModel }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      return data.text || "Sin respuesta.";
-    }
-  };
-
-  const analizarIA = async (item,tipo,dd) => {
-    const key=`${sucIdx}-${tipo}-${item.id}`; setCargIA(p=>({...p,[key]:true}));
-    const org=dd?.Comprador?.NombreOrganismo||item.org||"—";
-    const monto=dd?.MontoEstimado||item.monto||null;
-    const desc=dd?.Descripcion||"";
-    const d=dias(item.cierre);
-    const prompt=tipo==="lic"
-      ?`Eres experto en licitaciones públicas de salud en Chile. Analiza esta licitación para la sucursal indicada.\n\nSUCURSAL: ${suc.nombre} | ${suc.empresa} (${suc.rut}) | ${suc.tipo} | ${suc.ciudad}\n\nLICITACIÓN: ${item.nombre}\nID: ${item.id}\nTipo: ${item.tipo} (${TIPO_DESC[item.tipo]||""})\nOrganismo: ${org}\nMonto estimado: ${monto?fmt(monto):"Ver bases"}\nCierre: ${fmtD(item.cierre)} ${d!==null&&d>0?"(en "+d+" días)":""}\nDescripción: ${desc}\nEspecialidades detectadas: ${item.esps?.join(", ")||"—"}\n\n1. REQUISITOS PROBABLES\nLista con ✅ (probablemente cumples), ❌ (probablemente NO), ❓ (verificar en bases)\n\n2. DOCUMENTOS A PREPARAR\nDocumentos típicos para este tipo de licitación\n\n3. PASOS INMEDIATOS\nExactamente 3 pasos. El primero SIEMPRE: "Descarga las bases desde Mercado Público con el código ${item.id}"\n\n4. RECOMENDACIÓN: SÍ / NO / CONDICIONADO — 1 línea\n\nEspañol directo, sin preamble.`
-      :`Analiza esta compra ágil:\nSUCURSAL: ${suc.nombre} | ${suc.tipo} | ${suc.ciudad}\nCOMPRA: ${item.nombre} | ${item.organismo} | ${fmt(item.monto)}\nÍTEMS: ${item.items.map(i=>`${i.desc} (${i.cant} ${i.unidad})`).join("; ")}\n1. RECOMENDACIÓN: SÍ/NO/CONDICIONADO\n2. CONSIDERACIONES (máx. 3)\n3. ACCIÓN inmediata (máx. 2)\nEspañol, directo.`;
-    try{
-      const texto = await callAI(prompt);
-      setAnalisis(p=>({...p,[key]:texto}));
-    }catch(e){ setAnalisis(p=>({...p,[key]:"Error: "+e.message})); capturarError("analizarIA:"+item.id, e); }
-    setCargIA(p=>({...p,[key]:false}));
+    const res = await fetch("/api/analisis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, model: "gpt-4o" }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data.text || "Sin respuesta.";
   };
 
   // ── Sistema de diagnóstico ─────────────────────────────────────────────────
@@ -791,9 +777,6 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {vista==="detalle"&&<button onClick={()=>setVista("dashboard")} style={{background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:500,cursor:"pointer",color:"var(--color-text-secondary)"}}>← Volver</button>}
           <button onClick={()=>setShowTkt(!showTkt)} style={{background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"5px 10px",fontSize:11,cursor:"pointer",color:ticket?"#3B6D11":"var(--color-text-tertiary)"}}>{ticket?"🟢 API conectada":"⚙ Conectar API"}</button>
-          <div style={{display:"flex",gap:3,background:"var(--color-background-secondary)",borderRadius:8,padding:"3px",border:"0.5px solid var(--color-border-tertiary)"}}>
-            {AI_MODELS.map(m=><button key={m.id} onClick={()=>setAiModel(m.id)} title={m.desc} style={{padding:"3px 9px",borderRadius:6,border:"none",background:aiModel===m.id?"var(--color-background-primary)":"transparent",fontWeight:aiModel===m.id?600:400,fontSize:11,cursor:"pointer",color:aiModel===m.id?"var(--color-text-primary)":"var(--color-text-tertiary)",boxShadow:aiModel===m.id?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>{m.icon} {m.label}</button>)}
-          </div>
         </div>
       </div>
 
@@ -906,7 +889,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                             </div>
                           </div>
                           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,minWidth:90}}>
-                            <span style={{fontSize:11,color:d!==null&&d<=7&&d>0?"#854F0B":"var(--color-text-tertiary)",fontWeight:d!==null&&d<=7&&d>0?600:400}}>{d!==null&&d>0?`Cierra en ${d}d`:d===0?"Hoy":"Cerrada"}</span>
+                            <span style={{fontSize:11,color:d!==null&&d<=7&&d>0?"#854F0B":"var(--color-text-tertiary)",fontWeight:d!==null&&d<=7&&d>0?600:400}}>{d!==null&&d>0?`Cierra en ${d}d`:d===0?"Cierra hoy":"Cerrada"}</span>
                             <span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>{fmtD(lic.cierre)}</span>
                             <span onClick={()=>abrirDetalle(lic)} style={{fontSize:10,color:"#185FA5",cursor:"pointer"}}>Ver detalle →</span>
                           </div>
@@ -979,7 +962,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                     <div style={{fontSize:14,fontWeight:700,color:"#185FA5"}}>{fmt(ca.monto)}</div>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,minWidth:90}}>
-                    <span style={{fontSize:11,color:d!==null&&d<=3&&d>0?"#854F0B":"var(--color-text-tertiary)"}}>{d!==null&&d>0?`Cierra en ${d}d`:"Cerrada"}</span>
+                    <span style={{fontSize:11,color:d!==null&&d<=3&&d>0?"#854F0B":"var(--color-text-tertiary)"}}>{d!==null&&d>0?`Cierra en ${d}d`:d===0?"Cierra hoy":"Cerrada"}</span>
                     <span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>{ca.items.length} ítems</span>
                   </div>
                 </div>;
@@ -1170,7 +1153,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                 <div style={{padding:"15px 17px"}}>
                   {pestana==="info"&&(dd
                     ?[["Organismo",org],["Región",region2],["Monto estimado",monto?fmt(monto):"No publicado"],["Publicación",fPub||"—"],["Cierre",fmtD(fCie)],["Preguntas hasta",fPre||"No aplica"],["Tipo",`${detalle.tipo} – ${TIPO_DESC[detalle.tipo]||detalle.tipo}`]].map(([k,v],i,a)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",fontSize:13,borderBottom:i<a.length-1?"0.5px solid var(--color-border-tertiary)":"none"}}><span style={{color:"var(--color-text-secondary)"}}>{k}</span><span style={{fontWeight:600,textAlign:"right",maxWidth:"60%"}}>{v}</span></div>)
-                    :<div style={{color:"var(--color-text-tertiary)",fontSize:13,textAlign:"center",padding:"1rem"}}>{ticket?"Usa '↺ Cargar detalle' o 'Analizar con IA' para obtener información completa":"Conecta el ticket de API para cargar el detalle"}</div>
+                    :<div style={{color:"var(--color-text-tertiary)",fontSize:13,textAlign:"center",padding:"1rem"}}>{ticket?"Usa '↺ Cargar detalle' para obtener información completa":"Conecta el ticket de API para cargar el detalle"}</div>
                   )}
                   {pestana==="items"&&(items.length>0
                     ?<div>
