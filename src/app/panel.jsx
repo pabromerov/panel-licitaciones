@@ -409,7 +409,12 @@ export default function App() {
 
   const fetchDesdeAPI = async (silencioso=false) => {
     if (!silencioso) { setLoading(true); setApiErr(null); }
-    const T=["ecografía","ecografia","ecotomografía","ecotomografia","transvaginal","doppler","scanner","tomografía","tomografia","mamografía","mamografia","radiografía","radiografia","telerradiología","resonancia magnética","resonancia magnetica","ecocardiograma","holter","electrocardiograma","arritmia","cardiovascular","test de esfuerzo","ergometría","otorrinolaringología","otorrino","audiometría","audiometria","impedanciometría","audífono","hipoacusia","neurología","neurologia","neurofisiología","electroencefalograma","electromiografía","espirometría","espirometria","función pulmonar","óxido nítrico","urodinamia","cistoscopía","uroflujometría","medicina general","consultas médicas","fonasa","telemedicina","prestaciones de salud","servicio dental","atención dental","endodoncia","cirujano dentista","servicio odontológico","kinesiología","kinesiologia","rehabilitación","rehabilitacion","fisioterapia","fonoaudiología","laboratorio clínico","hemograma","bioquímica","microbiología","anatomía patológica","imágenes diagnósticas","imagenes diagnosticas","imagenología","imagenologia","programa imágenes","endoscopía","endoscopia","colonoscopía","colonoscopia","gastroenterología","gastroenterologia","gastroscopía","gastroscopia","histopatología","histopatologia","biopsia digestiva","nasofibroscopía","nasofibroscopia","nasofibrolaringoscopía","nasofibrolaringoscopia","prestaciones médicas","prestaciones medicas","atención ambulatoria","odontológica","odontologica","altas odontológicas","altas odontologicas","prótesis dental","protesis dental","salud bucal"];
+        // T se deriva de ESPS.terms para que nunca quede desincronizada de la lógica
+        // de especialidades usada más abajo (isRel/getEsps). Antes eran dos listas
+        // mantenidas a mano por separado, lo que dejaba pasar términos agregados a
+        // ESPS pero no a T (ej: "servicio de imágenes", "cardiología"), causando que
+        // licitaciones válidas nunca llegaran ni a la etapa de filtrado por región.
+        const T = [...new Set(Object.values(ESPS).flatMap(e => e.terms))];
     const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     try {
