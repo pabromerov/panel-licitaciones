@@ -319,6 +319,7 @@ export default function App() {
   const [pestana,    setPestana]    = useState("info");
   const [filtro,     setFiltro]     = useState("todos");
   const [filtroFecha,setFiltroFecha]= useState("todas");
+  const [ocultarNoAplica,setOcultarNoAplica]=useState(false); // toggle para ocultar licitaciones/compras marcadas "No aplica"
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
   const [parts,      setParts]      = useState({});
@@ -393,6 +394,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Auto-refresh cada 5 minutos. Se salta el enriquecimiento de montos (ver
+    // fetchDesdeAPI) para no sobrecargar la API de Mercado Público en cada
+    // ciclo, y se omite por completo si la pestaña está en segundo plano
+    // (document.hidden) para no gastar cuota cuando nadie está mirando el panel.
+    const intervalId = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetchDesdeAPI(true, false);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     fetch(`/api/participaciones?rut=${encodeURIComponent(suc.rut)}`).then(r=>r.json()).then(d=>setParts(d.data||{})).catch(()=>setParts({}));
   }, [sucIdx]);
 
@@ -423,7 +436,7 @@ export default function App() {
   const saveParts = async p => { setParts(p); try{ await fetch("/api/participaciones",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rut:suc.rut,data:p})}); }catch{} };
   const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await appStore.set("ss:ticket",c); }catch{} };
 
-  const fetchDesdeAPI = async (silencioso=false) => {
+  const fetchDesdeAPI = async (silencioso=false, enriquecerMontos=true) => {
     if (!silencioso) { setLoading(true); setApiErr(null); }
         // T se deriva de ESPS.terms para que nunca quede desincronizada de la lógica
         // de especialidades usada más abajo (isRel/getEsps). Antes eran dos listas
@@ -459,20 +472,26 @@ export default function App() {
                 // MontoEstimado; sin este paso, montoStr() siempre cae al tramo UTM
                 // generico por tipo de licitacion, incluso cuando ChileCompra si
                 // publico el monto real (VisibilidadMonto=1).
-                const candidatas = Object.values(nuevoRaw).flat();
-                for (let i = 0; i < candidatas.length; i += 5) {
-                            const lote = candidatas.slice(i, i + 5);
-                            await Promise.all(lote.map(async c => {
-                                          try {
-                                                          const r = await fetch(`/api/licitaciones?codigo=${c.id}`);
-                                                          const d = await r.json();
-                                                          const det = d?.Listado?.[0];
-                                                          if (det?.VisibilidadMonto === 1 && det?.MontoEstimado) {
-                                                                            c.monto = det.MontoEstimado;
-                                                          }
-                                          } catch {}
-                            }));
-                            if (i + 5 < candidatas.length) await new Promise(res => setTimeout(res, 2000));
+                // El enriquecimiento de montos se salta en los refrescos automáticos
+                // silenciosos (cada 5 min) para no sumar hasta ~50 llamadas de detalle
+                // extra a Mercado Público en cada ciclo. Sigue corriendo completo en la
+                // carga inicial y al usar el botón manual "↺ Actualizar API".
+                if (enriquecerMontos) {
+                  const candidatas = Object.values(nuevoRaw).flat();
+                  for (let i = 0; i < candidatas.length; i += 5) {
+                              const lote = candidatas.slice(i, i + 5);
+                              await Promise.all(lote.map(async c => {
+                                            try {
+                                                            const r = await fetch(`/api/licitaciones?codigo=${c.id}`);
+                                                            const d = await r.json();
+                                                            const det = d?.Listado?.[0];
+                                                            if (det?.VisibilidadMonto === 1 && det?.MontoEstimado) {
+                                                                              c.monto = det.MontoEstimado;
+                                                            }
+                                            } catch {}
+                              }));
+                              if (i + 5 < candidatas.length) await new Promise(res => setTimeout(res, 2000));
+                  }
                 }
         if (Object.keys(nuevoRaw).length > 0) {
           setApiRaw(nuevoRaw);
@@ -698,12 +717,14 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
       return true;
     });
   };
-  const licsFiltered = applyDate(filtro==="todos" ? lics : lics.filter(l=>l.estado===filtro));
+  const licsFiltered = applyDate(filtro==="todos" ? lics : lics.filter(l=>l.estado===filtro))
+    .filter(l => !ocultarNoAplica || parts[`lic:${l.id}`]?.estado !== "no_aplica");
   const licsPaged    = licsFiltered.slice(0, page*PAGE_SIZE);
   const casRegion    = suc.regiones
     ? COMPRAS_AGILES.filter(c => suc.regiones.includes(c.region))
     : COMPRAS_AGILES.filter(c => c.region===suc.region);
-  const casFiltered  = filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro);
+  const casFiltered  = (filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro))
+    .filter(c => !ocultarNoAplica || parts[`ca:${c.id}`]?.estado !== "no_aplica");
   const misP         = Object.entries(parts);
   const misP_eval    = misP.filter(([,v])=>["en_evaluacion","presentada"].includes(v.estado));
   const espCounts    = Object.keys(ESPS).map(k=>({name:k,value:lics.filter(l=>l.esps.includes(k)).length})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
@@ -850,6 +871,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
               {[["todos","Todas"],["publicada","Publicadas"],["por_vencer","Por vencer"],["adjudicada","Adjudicadas"],["cerrada","Cerradas"],["desierta","Desiertas"]].map(([k,l])=>(
                 <button key={k} onClick={()=>{setFiltro(k);setPage(1);}} style={fBtn(filtro===k)}>{l}</button>
               ))}
+              <button onClick={()=>{setOcultarNoAplica(v=>!v);setPage(1);}} style={{...fBtn(ocultarNoAplica),marginLeft:"auto"}}>{ocultarNoAplica?"👁 Mostrar \"No aplica\"":"🚫 Ocultar \"No aplica\""}</button>
             </div>
 
             {subVista==="lista"&&(
