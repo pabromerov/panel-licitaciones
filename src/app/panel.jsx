@@ -26,7 +26,7 @@ const ESPS = {
   "Respiratorio":    { icon:"🫁", c:"#0891b2", terms:["espirometría","espirometria","función pulmonar","funcional respiratorio","capacidad pulmonar","óxido nítrico","feno","prueba broncodilatadora","prick test","alergia respiratoria"] },
   "Urología":        { icon:"🫘", c:"#7c3aed", terms:["urodinamia","urodinámica","cistoscopía","cistoscopia","uroflujometría","uroflujometria","cistometría","urología","urologia"] },
   "Gastroenterología":{  icon:"🩺", c:"#0f766e", terms:["endoscopía","endoscopia","colonoscopía","colonoscopia","gastroenterología","gastroenterologia","gastroscopía","gastroscopia","histopatología","histopatologia","biopsia digestiva","colonoscopia virtual","cápsula endoscópica"] },
-  "Medicina General":{ icon:"👨‍⚕️", c:"#378ADD", terms:["medicina general","consultas médicas","consulta medica","atención médica","atención ambulatoria","fonasa","telemedicina","prestaciones de salud","prestaciones médicas","prestaciones medicas","atención ambulatoria","odontológica","odontologica","altas odontológicas","altas odontologicas","prótesis dental","protesis dental","salud bucal","servicio médico especializado","consultas medicas especialistas"] },
+  "Medicina General":{ icon:"👨‍⚕️", c:"#378ADD", terms:["medicina general","consultas médicas","consulta medica","atención médica","atención ambulatoria","telemedicina","prestaciones de salud","prestaciones médicas","prestaciones medicas","atención ambulatoria","odontológica","odontologica","altas odontológicas","altas odontologicas","prótesis dental","protesis dental","salud bucal","servicio médico especializado","consultas medicas especialistas"] }, // "fonasa" se quitó: es ruido organizacional (aparece en casi cualquier licitación pública de salud) y causaba falsos positivos como 591-17-LE26 "SERVICIOS DE RETIRO DE RESIDUOS RECICLADOS FONASA"
   "Odontología":     { icon:"🦷", c:"#EF9F27", terms:["odontología","odontologia","odontológico","odontologico","odontológica","odontologica","dental","servicio dental","atención dental","endodoncia","cirujano dentista","rehabilitación protésica","rehabilitacion protesica","altas odontológicas","altas odontologicas","prótesis dental","protesis dental","salud bucal"] },
   "Rehabilitación":  { icon:"🦿", c:"#639922", terms:["kinesiología","kinesiologia","kinesio","rehabilitación","rehabilitacion","fisioterapia","terapia ocupacional","fonoaudiología","fonoaudiologia"] },
   "Laboratorio":     { icon:"🧪", c:"#888780", terms:["laboratorio clínico","laboratorio clinico","exámenes de laboratorio","hemograma","bioquímica","bioquimica","microbiología","microbiologia","anatomía patológica","anatomia patologica","histopatología","histopatologia","biopsia","prestaciones de laboratorio","convenio de suministro de exámenes externos de laboratorio"] },
@@ -52,7 +52,37 @@ const TIPO_DIAG = {
 };
 
 const norm     = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-const matchEsp = (nombre,k) => ESPS[k].terms.some(t => norm(nombre).includes(norm(t)));
+
+// Muchos títulos siguen el patrón "SERVICIO DE X ... PARA EL/LA/LOS/LAS
+// [nombre de organismo o centro destino]". Cuando el nombre del destino
+// contiene una palabra de especialidad (ej. "Centro de Rehabilitación"),
+// matchEsp clasificaba erróneamente servicios no clínicos (aseo, transporte,
+// aire acondicionado, retiro de residuos) como esa especialidad, solo por el
+// nombre del lugar — confirmado con CAPREDENA (4776-47/-49/-50/-51-LE/LP/LR26,
+// todas dirigidas al "Centro de Rehabilitación CAPREDENA La Florida"). Para
+// evitarlo, se recorta el título justo antes de "para el/la/los/las [tipo de
+// institución]", que es el patrón típico para introducir el destino. Ojo: NO
+// se recorta en "para el servicio de ..." porque ahí sí puede describir el
+// servicio procurado (ej. "equipamiento para el Servicio de Imagenología").
+const INSTITUCIONES_DESTINO = ["centro de rehabilitacion","centros de rehabilitacion","centro de salud","centros de salud","hospital","hospitales","cesfam","consultorio","consultorios","posta de salud","municipalidad","municipalidades","clinica","clinicas","complejo asistencial","instituto","institutos"];
+const tituloServicio = nombre => {
+  const n = norm(nombre);
+  const conectores = [" para el ", " para la ", " para los ", " para las "];
+  let corte = n.length;
+  conectores.forEach(con => {
+    let desde = 0, i;
+    while ((i = n.indexOf(con, desde)) !== -1) {
+      const resto = n.slice(i + con.length);
+      if (INSTITUCIONES_DESTINO.some(inst => resto.startsWith(inst))) {
+        if (i < corte) corte = i;
+        break;
+      }
+      desde = i + con.length;
+    }
+  });
+  return n.slice(0, corte);
+};
+const matchEsp = (nombre,k) => ESPS[k].terms.some(t => tituloServicio(nombre).includes(norm(t)));
 const getEsps  = nombre => Object.keys(ESPS).filter(k => matchEsp(nombre,k));
 const isRel    = (nombre,active) => active.some(k => matchEsp(nombre,k));
 
@@ -444,8 +474,44 @@ export default function App() {
         // ESPS pero no a T (ej: "servicio de imágenes", "cardiología"), causando que
         // licitaciones válidas nunca llegaran ni a la etapa de filtrado por región.
         const T = [...new Set(Object.values(ESPS).flatMap(e => e.terms))];
-    const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos"];
+    const X=["resinas dentales","insumos dentales","reactivos para exámenes","brucelosis","bovina","mantención equipo","arriendo equipo","adquisición equipo","suministro equipo","agua potable","alcantarillado","pileta","accesorios clínicos","centrífugas","gel ultrasonido","boquillas y filtros","suministro de reactivos","reactivos e insumos",
+      // Variantes "mantenimiento" (con -imiento, no cubiertas por "mantención"): 2258-148-LP26
+      "mantenimiento correctivo","mantenimiento preventivo","mantenimiento de equipo","mantenimiento equipo",
+      // Instrumental/equipo específico sin la palabra "equipo" literal: 948354-126-LE26, 3710-70-LE26, 1057492-111-LP26
+      "uretrótomo","uretrótomos","microscopio","caja de instrumental","cajas de instrumental"];
     const n2 = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+    // Exclusión condicional: "insumos"/"reactivos"/"medicamentos"/"medios de
+    // contraste" sueltos son procura de BIENES, no de un SERVICIO — SANASALUD
+    // y filiales licitan para prestar servicios clínicos, no para ser
+    // proveedores de insumos. Se excluyen salvo que el título también indique
+    // que el objeto real es un servicio/examen/prestación/informe. Evidencia:
+    // 1058045-12-LR26 "MEDIOS DE CONTRASTE", 1057489-241-LP26 "REACTIVOS PCR
+    // MULTIPLEX", 1395-52-LE26 "MEDICAMENTOS TELEDERMATOLOGÍA". Caso especial:
+    // si el título EMPIEZA con un verbo de adquisición (compra/suministro/
+    // adquisición/provisión/arriendo), se excluye igual aunque aparezca
+    // "servicio de [departamento]" más adelante, porque ahí "servicio de X"
+    // suele ser el departamento destinatario, no la prestación ofertada —
+    // evidencia: 1057544-273-LP26 "Compra por Suministro de Insumos Clínicos
+    // en Consignación para Servicio de Urología".
+    const VERBOS_ADQUISICION = ["compra","suministro","adquisición","adquisicion","provisión","provision","arriendo"];
+    const INSUMOS_SUELTOS = ["insumos","reactivos","medicamentos","medios de contraste"];
+    const INDICADOR_SERVICIO = ["servicio de","examen","prestación","prestacion","informe"];
+    const esInsumoSuelto = nombreNorm => {
+      const tieneInsumo = INSUMOS_SUELTOS.some(p => nombreNorm.includes(n2(p)));
+      if (!tieneInsumo) return false;
+      const empiezaConAdquisicion = VERBOS_ADQUISICION.some(v => nombreNorm.trim().startsWith(n2(v)));
+      if (empiezaConAdquisicion) return true;
+      return !INDICADOR_SERVICIO.some(p => nombreNorm.includes(n2(p)));
+    };
+
+    // Exclusión condicional: "scanner" puede referirse a equipamiento médico
+    // (correcto) o a equipos de oficina (impresora/fotocopiadora), que no es
+    // clínico. Solo se excluye cuando coexisten. Evidencia: 2048-56-LP26
+    // "Arriendo impresoras y scanner".
+    const esScannerOficina = nombreNorm =>
+      nombreNorm.includes(n2("scanner")) &&
+      ["impresora","fotocopiadora","multifuncional"].some(p => nombreNorm.includes(n2(p)));
     try {
       let listado = null;
       try { const r = await fetch(`/api/licitaciones?resolveUnknown=1`); const d = await r.json(); if(d?.Listado) listado = d.Listado; } catch {}
@@ -456,7 +522,7 @@ export default function App() {
 
         const nuevoRaw = {};
         listado
-          .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&T.some(t=>nm.includes(n2(t))); })
+          .filter(l=>{ const nm=n2(l.Nombre); return !X.some(e=>nm.includes(n2(e)))&&!esInsumoSuelto(nm)&&!esScannerOficina(nm)&&T.some(t=>nm.includes(n2(t))); })
           .forEach(l => {
             const reg = l.RegionResolved || null;
             if (!reg) return;
@@ -717,14 +783,14 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
       return true;
     });
   };
-  const licsFiltered = applyDate(filtro==="todos" ? lics : lics.filter(l=>l.estado===filtro))
-    .filter(l => !ocultarNoAplica || parts[`lic:${l.id}`]?.estado !== "no_aplica");
+  const licsVisibles = ocultarNoAplica ? lics.filter(l => parts[`lic:${l.id}`]?.estado !== "no_aplica") : lics;
+  const licsFiltered = applyDate(filtro==="todos" ? licsVisibles : licsVisibles.filter(l=>l.estado===filtro));
   const licsPaged    = licsFiltered.slice(0, page*PAGE_SIZE);
   const casRegion    = suc.regiones
     ? COMPRAS_AGILES.filter(c => suc.regiones.includes(c.region))
     : COMPRAS_AGILES.filter(c => c.region===suc.region);
-  const casFiltered  = (filtro==="todos"?casRegion:casRegion.filter(c=>c.estado===filtro))
-    .filter(c => !ocultarNoAplica || parts[`ca:${c.id}`]?.estado !== "no_aplica");
+  const casVisibles  = ocultarNoAplica ? casRegion.filter(c => parts[`ca:${c.id}`]?.estado !== "no_aplica") : casRegion;
+  const casFiltered  = filtro==="todos"?casVisibles:casVisibles.filter(c=>c.estado===filtro);
   const misP         = Object.entries(parts);
   const misP_eval    = misP.filter(([,v])=>["en_evaluacion","presentada"].includes(v.estado));
   const espCounts    = Object.keys(ESPS).map(k=>({name:k,value:lics.filter(l=>l.esps.includes(k)).length})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
@@ -877,7 +943,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
             {subVista==="lista"&&(
               <>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:9,marginBottom:14}}>
-                  {[{l:"Total",v:lics.length,c:"var(--color-text-primary)"},{l:"Activas",v:lics.filter(l=>l.estado==="publicada").length,c:"#185FA5"},{l:"Por vencer",v:lics.filter(l=>l.estado==="por_vencer").length,c:"#854F0B"},{l:"Adjudicadas",v:lics.filter(l=>l.estado==="adjudicada").length,c:"#3B6D11"},{l:"Cerradas",v:lics.filter(l=>["cerrada","desierta"].includes(l.estado)).length,c:"#5F5E5A"}].map(m=>(
+                  {[{l:"Total",v:licsVisibles.length,c:"var(--color-text-primary)"},{l:"Activas",v:licsVisibles.filter(l=>l.estado==="publicada").length,c:"#185FA5"},{l:"Por vencer",v:licsVisibles.filter(l=>l.estado==="por_vencer").length,c:"#854F0B"},{l:"Adjudicadas",v:licsVisibles.filter(l=>l.estado==="adjudicada").length,c:"#3B6D11"},{l:"Cerradas",v:licsVisibles.filter(l=>["cerrada","desierta"].includes(l.estado)).length,c:"#5F5E5A"}].map(m=>(
                     <div key={m.l} style={{background:"var(--color-background-secondary)",borderRadius:10,padding:"10px 13px"}}>
                       <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginBottom:4}}>{m.l}</div>
                       <div style={{fontSize:22,fontWeight:600,color:m.c,lineHeight:1}}>{m.v}</div>
@@ -963,7 +1029,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
           <>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9,flex:1}}>
-                {[{l:"Total",v:casRegion.length,c:"var(--color-text-primary)"},{l:"Abiertas",v:casRegion.filter(c=>c.estado==="publicada").length,c:"#185FA5"},{l:"Adjudicadas",v:casRegion.filter(c=>c.estado==="adjudicada").length,c:"#3B6D11"}].map(m=>(
+                {[{l:"Total",v:casVisibles.length,c:"var(--color-text-primary)"},{l:"Abiertas",v:casVisibles.filter(c=>c.estado==="publicada").length,c:"#185FA5"},{l:"Adjudicadas",v:casVisibles.filter(c=>c.estado==="adjudicada").length,c:"#3B6D11"}].map(m=>(
                   <div key={m.l} style={{background:"var(--color-background-secondary)",borderRadius:10,padding:"10px 13px"}}>
                     <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginBottom:4}}>{m.l}</div>
                     <div style={{fontSize:22,fontWeight:600,color:m.c,lineHeight:1}}>{m.v}</div>
