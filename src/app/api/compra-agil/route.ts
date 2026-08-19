@@ -35,10 +35,11 @@ const TERMINOS: { termino: string; categoria: string }[] = [
     { termino: "otorrino", categoria: "Otorrinolaringología" },
 ];
 
-// Estados a incluir. Se excluye deliberadamente "cancelada" del listado
-// principal más adelante si se decide que agrega poco valor — por ahora se
-// incluye para no perder información.
-const ESTADOS = "publicada,cerrada,desierta,cancelada,proveedor_seleccionado";
+// Solo "publicada" (vigente, abierta a cotización). Se excluyen a propósito
+// cerrada/desierta/cancelada/proveedor_seleccionado: son historial, no
+// oportunidades vigentes, y su inclusión fue lo que causaba que aparecieran
+// compras ágiles de 2025 ya resueltas hace tiempo en el panel.
+const ESTADOS = "publicada";
 
 // Tope de seguridad por término (50 x 5 = 250 resultados máx). Compra Ágil
 // filtrada por una palabra clave específica de examen/equipo debería dar
@@ -92,6 +93,14 @@ export async function GET(request: NextRequest) {
             }
             for (const item of raw) {
                 if (vistos.has(item.codigo)) continue; // ya capturado por otro término
+                // Filtro de seguridad: aunque se pidió estado=publicada, se descarta
+                // igual cualquier registro cuyo cierre ya haya pasado (por si la
+                // plataforma tarda en actualizar el estado a "cerrada").
+                const cierreRaw = item.fechas?.fecha_cierre;
+                if (cierreRaw) {
+                    const cierreDate = new Date(cierreRaw.replace(" ", "T"));
+                    if (!isNaN(cierreDate.getTime()) && cierreDate < new Date()) continue;
+                }
                 vistos.set(item.codigo, {
                     id: item.codigo,
                     nombre: (item.nombre || "").trim(),
