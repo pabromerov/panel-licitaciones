@@ -10,11 +10,11 @@ const SUCURSALES = [
 ];
 
 const COMPRAS_AGILES = [
-  { id:"CA-2024-887234", nombre:"Insumos médicos desechables", organismo:"CESFAM Providencia", monto:1450000, publicacion:"2026-05-29", cierre:"2026-06-09", estado:"publicada", categoria:"Insumos", region:"RM", descripcion:"Adquisición de insumos desechables.", items:[{desc:"Guantes nitrilo talla M",cant:20,unidad:"caja"},{desc:"Mascarillas quirúrgicas",cant:15,unidad:"caja"}] },
-  { id:"CA-2024-901122", nombre:"Mantención equipos médicos menores", organismo:"Municipalidad de Ñuñoa", monto:1900000, publicacion:"2026-05-26", cierre:"2026-06-12", estado:"publicada", categoria:"Mantención", region:"RM", descripcion:"Mantención preventiva.", items:[{desc:"Mantención electrocardiógrafos",cant:3,unidad:"equipo"}] },
-  { id:"CA-2024-876543", nombre:"Insumos odontológicos básicos", organismo:"Hospital San Borja Arriarán", monto:1750000, publicacion:"2026-05-30", cierre:"2026-06-13", estado:"publicada", categoria:"Odontología", region:"RM", descripcion:"Insumos básicos para boxes dentales.", items:[{desc:"Anestesia articaína",cant:6,unidad:"caja"},{desc:"Composite A2",cant:20,unidad:"un."}] },
-  { id:"CA-2024-834211", nombre:"Radiología dental portátil San Antonio", organismo:"CESFAM San Antonio", monto:1200000, publicacion:"2026-05-22", cierre:"2026-06-05", estado:"adjudicada", categoria:"Imagenología", region:"Valparaíso", descripcion:"Radiografías dentales en modalidad visita.", items:[{desc:"Radiografía periapical digital",cant:80,unidad:"prestación"}] },
-  { id:"CA-2024-798341", nombre:"Insumos odontológicos urgencia Rancagua", organismo:"Hospital Regional Rancagua", monto:980000, publicacion:"2026-06-02", cierre:"2026-06-14", estado:"publicada", categoria:"Odontología", region:"O'Higgins", descripcion:"Reposición urgente insumos box dental.", items:[{desc:"Kit endodoncia básico",cant:5,unidad:"kit"}] },
+  { id:"CA-2024-887234", nombre:"Insumos médicos desechables", organismo:"CESFAM Providencia", monto:1450000, publicacion:"2026-05-29", cierre:"2026-06-09", estado:"publicada", categoria:"Insumos", region:"Región Metropolitana de Santiago", descripcion:"Adquisición de insumos desechables.", items:[{desc:"Guantes nitrilo talla M",cant:20,unidad:"caja"},{desc:"Mascarillas quirúrgicas",cant:15,unidad:"caja"}] },
+  { id:"CA-2024-901122", nombre:"Mantención equipos médicos menores", organismo:"Municipalidad de Ñuñoa", monto:1900000, publicacion:"2026-05-26", cierre:"2026-06-12", estado:"publicada", categoria:"Mantención", region:"Región Metropolitana de Santiago", descripcion:"Mantención preventiva.", items:[{desc:"Mantención electrocardiógrafos",cant:3,unidad:"equipo"}] },
+  { id:"CA-2024-876543", nombre:"Insumos odontológicos básicos", organismo:"Hospital San Borja Arriarán", monto:1750000, publicacion:"2026-05-30", cierre:"2026-06-13", estado:"publicada", categoria:"Odontología", region:"Región Metropolitana de Santiago", descripcion:"Insumos básicos para boxes dentales.", items:[{desc:"Anestesia articaína",cant:6,unidad:"caja"},{desc:"Composite A2",cant:20,unidad:"un."}] },
+  { id:"CA-2024-834211", nombre:"Radiología dental portátil San Antonio", organismo:"CESFAM San Antonio", monto:1200000, publicacion:"2026-05-22", cierre:"2026-06-05", estado:"adjudicada", categoria:"Imagenología", region:"Región de Valparaíso", descripcion:"Radiografías dentales en modalidad visita.", items:[{desc:"Radiografía periapical digital",cant:80,unidad:"prestación"}] },
+  { id:"CA-2024-798341", nombre:"Insumos odontológicos urgencia Rancagua", organismo:"Hospital Regional Rancagua", monto:980000, publicacion:"2026-06-02", cierre:"2026-06-14", estado:"publicada", categoria:"Odontología", region:"Región del Libertador General Bernardo O'Higgins", descripcion:"Reposición urgente insumos box dental.", items:[{desc:"Kit endodoncia básico",cant:5,unidad:"kit"}] },
 ];
 
 const ESPS = {
@@ -33,7 +33,7 @@ const ESPS = {
 };
 
 const E_LIC  = { publicada:{label:"Publicada",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, por_vencer:{label:"Por vencer",bg:"#FAEEDA",color:"#854F0B",dot:"#EF9F27"}, adjudicada:{label:"Adjudicada",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"}, cerrada:{label:"Cerrada",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"} };
-const E_CA   = { publicada:{label:"Abierta",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, adjudicada:{label:"Adjudicada",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"} };
+const E_CA   = { publicada:{label:"Abierta",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, adjudicada:{label:"Adjudicada",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"}, cerrada:{label:"Cerrada",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"}, cancelada:{label:"Cancelada",bg:"#FBEAE8",color:"#9B3B1A",dot:"#C8531F"} };
 const E_PART = { presentada:{label:"Presentada",bg:"#E6F1FB",color:"#185FA5",dot:"#378ADD"}, en_evaluacion:{label:"En evaluación",bg:"#EEEDFE",color:"#534AB7",dot:"#7F77DD"}, ganada:{label:"Adjudicada a nosotros",bg:"#EAF3DE",color:"#3B6D11",dot:"#639922"}, perdida:{label:"Adjudicada a otro",bg:"#FCEBEB",color:"#A32D2D",dot:"#E24B4A"}, desierta:{label:"Desierta",bg:"#F1EFE8",color:"#5F5E5A",dot:"#888780"}, no_aplica:{label:"No aplica",bg:"#ECEEF2",color:"#4A5568",dot:"#8A9BB5"}, revocada:{label:"Revocada",bg:"#FBEAE8",color:"#9B3B1A",dot:"#C8531F"} };
 
 // ── Sistema de diagnóstico ─────────────────────────────────────────────────
@@ -129,7 +129,20 @@ const montoStr = (tipo, monto) => {
 const TIPO_ICON = { "Centro médico":"🏥","Clínica":"🏨","Clínica dental":"🦷" };
 const SK_ESPS  = "ss:activeEsps";
 const SK_CACHE = "ss:apiRawCache";
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
+const SK_CACHE_CA = "ss:casRawCache";
+// Ya no se usa un TTL fijo (4h) — el refresco automático ahora es 1 vez al día
+// a partir de las 7:00 AM (ver yaEsHoraDeActualizar), más el botón manual.
+const HORA_CORTE_REFRESH = 7; // 7:00 AM hora local
+// true si: (a) ya pasaron las 7am de HOY, Y (b) la última actualización
+// (ultimaTs) fue antes de esas 7am (o nunca hubo una). Si son, por ejemplo,
+// las 6:50am y la última actualización fue ayer, todavía devuelve false —
+// se espera a que pasen las 7am para no actualizar de madrugada.
+const yaEsHoraDeActualizar = ultimaTs => {
+  const ahora = new Date();
+  const corte = new Date(ahora); corte.setHours(HORA_CORTE_REFRESH, 0, 0, 0);
+  if (ahora < corte) return false;
+  return !ultimaTs || new Date(ultimaTs) < corte;
+};
 const PAGE_SIZE = 30;
 
 const procesarRaw = (raw, activeArr, sucRegion, espsFilter, sucObj=null) => raw
@@ -376,6 +389,7 @@ export default function App() {
   const [lastDiag,   setLastDiag]   = useState(null);
   const [corrLog,    setCorrLog]    = useState([]);
   const [apiRaw,     setApiRaw]     = useState({}); // { region -> listado normalizado } de la API
+  const [casRaw,     setCasRaw]     = useState(COMPRAS_AGILES); // Compra Ágil real; arranca con el seed de ejemplo hasta la primera carga
 
   const suc = SUCURSALES[sucIdx];
 
@@ -403,35 +417,53 @@ export default function App() {
     // Cargar ticket
     fetch("/api/config").then(r=>r.json()).then(d=>{ if(d.ticket){ setTicket(d.ticket); appStore.set("ss:ticket",d.ticket).catch(()=>{}); } else { appStore.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); } }).catch(()=>{ appStore.get("ss:ticket").then(r=>{if(r?.value)setTicket(r.value);}).catch(()=>{}); });
 
-    // Cargar caché o hacer fetch automático
+    // Cargar caché de licitaciones. El refresco automático ya no es por
+    // antigüedad fija (4h) sino "1 vez al día a partir de las 7:00 AM": si la
+    // última actualización fue ANTES de las 7am de hoy y ya pasaron las 7am,
+    // se dispara un fetch silencioso; si no, se usa el caché tal cual está
+    // (aunque tenga más de un día, para no gastar cuota fuera de horario).
     appStore.get(SK_CACHE).then(r => {
-      if (r?.value) {
-        const cache = JSON.parse(r.value);
+      const cache = r?.value ? JSON.parse(r.value) : null;
+      if (cache?.data && !yaEsHoraDeActualizar(cache.ts)) {
+        setApiRaw(cache.data);
+        const fecha = new Date(cache.ts).toLocaleDateString("es-CL");
         const edad = Date.now() - (cache.ts || 0);
-        if (edad < CACHE_TTL_MS) {
-          // Caché vigente — usar directo
-          setApiRaw(cache.data);
-          const fecha = new Date(cache.ts).toLocaleDateString("es-CL");
-          const horas = Math.floor(edad / 3600000);
-          const mins = Math.floor((edad % 3600000) / 60000);
-          setLastFetch(`${fecha} · Caché (hace ${horas > 0 ? horas+"h " : ""}${mins}min)`);
-          return;
-        }
+        const horas = Math.floor(edad / 3600000);
+        const mins = Math.floor((edad % 3600000) / 60000);
+        setLastFetch(`${fecha} · Caché (hace ${horas > 0 ? horas+"h " : ""}${mins}min)`);
+        return;
       }
-      // Sin caché válido — fetch automático silencioso
       fetchDesdeAPI(true);
     }).catch(() => fetchDesdeAPI(true));
+
+    // Mismo criterio para Compra Ágil (caché propio, SK_CACHE_CA)
+    appStore.get(SK_CACHE_CA).then(r => {
+      const cache = r?.value ? JSON.parse(r.value) : null;
+      if (cache?.data && !yaEsHoraDeActualizar(cache.ts)) {
+        setCasRaw(cache.data);
+        return;
+      }
+      fetchCompraAgil();
+    }).catch(() => fetchCompraAgil());
   }, []);
 
   useEffect(() => {
-    // Auto-refresh cada 5 minutos. Se salta el enriquecimiento de montos (ver
-    // fetchDesdeAPI) para no sobrecargar la API de Mercado Público en cada
-    // ciclo, y se omite por completo si la pestaña está en segundo plano
-    // (document.hidden) para no gastar cuota cuando nadie está mirando el panel.
+    // Revisión periódica (cada 10 min) de si ya toca el refresco diario de
+    // las 7am. La revisión en sí es liviana (solo compara fechas en el
+    // caché local); el fetch real a la API solo se dispara la primera vez
+    // que la condición se cumple cada día. Se omite si la pestaña está en
+    // segundo plano, para no gastar cuota cuando nadie está mirando el panel.
     const intervalId = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
-      fetchDesdeAPI(true, false);
-    }, 5 * 60 * 1000);
+      appStore.get(SK_CACHE).then(r => {
+        const cache = r?.value ? JSON.parse(r.value) : null;
+        if (yaEsHoraDeActualizar(cache?.ts)) fetchDesdeAPI(true);
+      }).catch(() => {});
+      appStore.get(SK_CACHE_CA).then(r => {
+        const cache = r?.value ? JSON.parse(r.value) : null;
+        if (yaEsHoraDeActualizar(cache?.ts)) fetchCompraAgil();
+      }).catch(() => {});
+    }, 10 * 60 * 1000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -466,7 +498,7 @@ export default function App() {
   const saveParts = async p => { setParts(p); try{ await fetch("/api/participaciones",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rut:suc.rut,data:p})}); }catch{} };
   const saveTicket = async t => { const c=t.trim().toUpperCase(); setTicket(c); setShowTkt(false); try{ await appStore.set("ss:ticket",c); }catch{} };
 
-  const fetchDesdeAPI = async (silencioso=false, enriquecerMontos=true) => {
+  const fetchDesdeAPI = async (silencioso=false) => {
     if (!silencioso) { setLoading(true); setApiErr(null); }
         // T se deriva de ESPS.terms para que nunca quede desincronizada de la lógica
         // de especialidades usada más abajo (isRel/getEsps). Antes eran dos listas
@@ -538,26 +570,27 @@ export default function App() {
                 // MontoEstimado; sin este paso, montoStr() siempre cae al tramo UTM
                 // generico por tipo de licitacion, incluso cuando ChileCompra si
                 // publico el monto real (VisibilidadMonto=1).
-                // El enriquecimiento de montos se salta en los refrescos automáticos
-                // silenciosos (cada 5 min) para no sumar hasta ~50 llamadas de detalle
-                // extra a Mercado Público en cada ciclo. Sigue corriendo completo en la
-                // carga inicial y al usar el botón manual "↺ Actualizar API".
-                if (enriquecerMontos) {
-                  const candidatas = Object.values(nuevoRaw).flat();
-                  for (let i = 0; i < candidatas.length; i += 5) {
-                              const lote = candidatas.slice(i, i + 5);
-                              await Promise.all(lote.map(async c => {
-                                            try {
-                                                            const r = await fetch(`/api/licitaciones?codigo=${c.id}`);
-                                                            const d = await r.json();
-                                                            const det = d?.Listado?.[0];
-                                                            if (det?.VisibilidadMonto === 1 && det?.MontoEstimado) {
-                                                                              c.monto = det.MontoEstimado;
-                                                            }
-                                            } catch {}
-                              }));
-                              if (i + 5 < candidatas.length) await new Promise(res => setTimeout(res, 2000));
-                  }
+                // Enriquecer con MontoEstimado real via detalle, en lotes de 5 con
+                // pausa de 2s entre lotes. El listado bulk (estado=activas) NUNCA trae
+                // MontoEstimado; sin este paso, montoStr() siempre cae al tramo UTM
+                // generico por tipo de licitacion. Como el refresco automático ahora
+                // es solo 1 vez al día (7am) + botón manual, ya no hace falta saltar
+                // este paso para ahorrar llamadas (eso era necesario cuando corría
+                // cada 5 min).
+                const candidatas = Object.values(nuevoRaw).flat();
+                for (let i = 0; i < candidatas.length; i += 5) {
+                            const lote = candidatas.slice(i, i + 5);
+                            await Promise.all(lote.map(async c => {
+                                          try {
+                                                          const r = await fetch(`/api/licitaciones?codigo=${c.id}`);
+                                                          const d = await r.json();
+                                                          const det = d?.Listado?.[0];
+                                                          if (det?.VisibilidadMonto === 1 && det?.MontoEstimado) {
+                                                                            c.monto = det.MontoEstimado;
+                                                          }
+                                          } catch {}
+                            }));
+                            if (i + 5 < candidatas.length) await new Promise(res => setTimeout(res, 2000));
                 }
         if (Object.keys(nuevoRaw).length > 0) {
           setApiRaw(nuevoRaw);
@@ -572,7 +605,22 @@ export default function App() {
     if (!silencioso) setLoading(false);
   };
 
-  const actualizarDesdeAPI = () => fetchDesdeAPI(false);
+  // Trae Compra Ágil real desde /api/compra-agil (búsqueda curada por
+  // especialidad — ver route.ts). Se guarda en caché local igual que
+  // fetchDesdeAPI, para que la vista no dependa de que la llamada esté
+  // siempre disponible.
+  const fetchCompraAgil = async () => {
+    try {
+      const r = await fetch(`/api/compra-agil`);
+      const d = await r.json();
+      if (d?.Listado) {
+        setCasRaw(d.Listado);
+        try { await appStore.set(SK_CACHE_CA, JSON.stringify({ ts: Date.now(), data: d.Listado })); } catch {}
+      }
+    } catch (e) { capturarError("fetchCompraAgil", e); }
+  };
+
+  const actualizarDesdeAPI = () => { fetchDesdeAPI(false); fetchCompraAgil(); };
 
   const fetchDetalle = async id => {
     if(detData[id]||!ticket) return; setLoadDet(true);
@@ -786,9 +834,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
   const licsVisibles = ocultarNoAplica ? lics.filter(l => parts[`lic:${l.id}`]?.estado !== "no_aplica") : lics;
   const licsFiltered = applyDate(filtro==="todos" ? licsVisibles : licsVisibles.filter(l=>l.estado===filtro));
   const licsPaged    = licsFiltered.slice(0, page*PAGE_SIZE);
-  const casRegion    = suc.regiones
-    ? COMPRAS_AGILES.filter(c => suc.regiones.includes(c.region))
-    : COMPRAS_AGILES.filter(c => c.region===suc.region);
+  const casRegion    = casRaw.filter(c => regionOkSuc(c.region, suc));
   const casVisibles  = ocultarNoAplica ? casRegion.filter(c => parts[`ca:${c.id}`]?.estado !== "no_aplica") : casRegion;
   const casFiltered  = filtro==="todos"?casVisibles:casVisibles.filter(c=>c.estado===filtro);
   const misP         = Object.entries(parts);
@@ -1091,7 +1137,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
                         </div>
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           {(()=>{const ep=E_PART[v.estado];return ep?<span style={{display:"inline-flex",alignItems:"center",gap:4,background:ep.bg,color:ep.color,borderRadius:20,padding:"3px 9px",fontSize:11,fontWeight:500}}><span style={{width:6,height:6,borderRadius:"50%",background:ep.dot}}/>{ep.label}</span>:null;})()}
-                          <button onClick={()=>{const item=lics.find(l=>l.id===k.split(":")[1])||COMPRAS_AGILES.find(l=>l.id===k.split(":")[1])||{id:k.split(":")[1],nombre:v.nombre,cierre:v.cierre};abrirModal(item,v.tipo);}} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"4px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>✎ Editar</button>
+                          <button onClick={()=>{const item=lics.find(l=>l.id===k.split(":")[1])||casRaw.find(l=>l.id===k.split(":")[1])||{id:k.split(":")[1],nombre:v.nombre,cierre:v.cierre};abrirModal(item,v.tipo);}} style={{background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,padding:"4px 10px",fontSize:11,cursor:"pointer",color:"var(--color-text-secondary)",fontWeight:500}}>✎ Editar</button>
                         </div>
                       </div>
                       <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:"var(--color-text-tertiary)"}}>
