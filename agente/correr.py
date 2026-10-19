@@ -45,6 +45,10 @@ def recolectar():
             if l["CodigoExterno"] not in vistos:
                 vistos.add(l["CodigoExterno"]); todas.append(l)
         d += dt.timedelta(days=1); time.sleep(1)
+    # El listado por fecha trae toda licitación con movimiento ese día (cerradas, adjudicadas…).
+    # Solo interesan las publicadas (CodigoEstado 5); la fecha de publicación se valida con el detalle.
+    revisadas = len(todas)
+    todas = [l for l in todas if l.get("CodigoEstado") == 5]
     cand, desc = [], []
     for l in todas:
         est, esps, motivo = capa1(l.get("Nombre", ""))
@@ -58,10 +62,13 @@ def recolectar():
         if not det:
             out.append({"codigo": l["CodigoExterno"], "nombre": l.get("Nombre"), "especialidades": esps, "estado_filtro": "sin_detalle"}); continue
         est, motivo, datos = capa2(det)
+        pub = (datos.get("publicacion") or "")[:10]
+        if pub and pub < desde.isoformat():
+            est, motivo = "descartada", f"publicada antes de la ventana ({pub})"
         reg = {"codigo": l["CodigoExterno"], "nombre": det.get("Nombre"), "especialidades": esps, "estado_filtro": est, "motivo_filtro": motivo, "tipo": det.get("Tipo"), **datos}
         if est == "descartada": desc.append({"codigo": reg["codigo"], "nombre": reg["nombre"], "capa": "detalle", "motivo": motivo})
         else: out.append(reg)
-    meta = {"ventana": {"desde": desde.isoformat(), "hasta": hasta.isoformat()}, "revisadas": len(todas), "candidatas_nombre": len(cand)}
+    meta = {"ventana": {"desde": desde.isoformat(), "hasta": hasta.isoformat()}, "revisadas": revisadas, "publicadas": len(todas), "candidatas_nombre": len(cand)}
     json.dump({"meta": meta, "candidatos": out}, open("candidatos.json", "w"), ensure_ascii=False, indent=1)
     json.dump(desc, open("descartadas.json", "w"), ensure_ascii=False, indent=1)
     print(json.dumps(meta), "| para clasificar:", len(out), "| descartadas:", len(desc))
