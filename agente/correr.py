@@ -1,6 +1,7 @@
 """Agente diario CMPV — recolección (capas 1 y 2) y publicación del reporte.
 Uso:
   python3 agente/correr.py recolectar        → escribe candidatos.json y descartadas.json
+  (ventana manual: definir DESDE=AAAA-MM-DD y opcional HASTA=AAAA-MM-DD antes de ejecutar)
   python3 agente/correr.py publicar rep.json → POST a /api/reporte
 Requiere variables: PANEL_URL (https://panel-licitaciones.vercel.app) y AGENTE_KEY.
 """
@@ -25,6 +26,11 @@ def ventana():
     """Desde el día siguiente al último reporte publicado hasta ayer (máx. 7 días).
     Así el lunes cubre vie–dom y un feriado o una corrida fallida no deja huecos."""
     hoy = dt.datetime.now(CL).date(); ayer = hoy - dt.timedelta(days=1)
+    # Corrida manual: DESDE y HASTA (AAAA-MM-DD) fuerzan la ventana.
+    if os.environ.get("DESDE"):
+        d0 = dt.date.fromisoformat(os.environ["DESDE"])
+        d1 = dt.date.fromisoformat(os.environ.get("HASTA") or ayer.isoformat())
+        return d0, d1
     try:
         ult = (json.load(urllib.request.urlopen(PANEL + "/api/reporte", timeout=30)).get("reporte") or {})
         hasta_prev = dt.date.fromisoformat(ult["ventana"]["hasta"])
@@ -54,13 +60,23 @@ def recolectar():
         est, esps, motivo = capa1(l.get("Nombre", ""))
         if est == "descartada": desc.append({"codigo": l["CodigoExterno"], "nombre": l.get("Nombre"), "capa": "nombre", "motivo": motivo})
         else: cand.append((l, esps))
-    out = []
+    def detalle(codigo):
+        try: return (get(f"/api/agente?codigo={codigo}").get("Listado") or [None])[0]
+        except Exception: return None
+    dets = {}
     for l, esps in cand:   # detalle secuencial: la API falla con llamadas en paralelo
-        try: det = (get(f"/api/agente?codigo={l['CodigoExterno']}").get("Listado") or [None])[0]
-        except Exception: det = None
-        time.sleep(1.5)
+        dets[l["CodigoExterno"]] = detalle(l["CodigoExterno"]); time.sleep(1.5)
+    for ronda in (1, 2):   # reintentos para los que fallaron (límite de la API)
+        faltan = [c for c, v in dets.items() if not v]
+        if not faltan: break
+        time.sleep(15 * ronda)
+        for c in faltan:
+            dets[c] = detalle(c); time.sleep(3)
+    out = []
+    for l, esps in cand:
+        det = dets.get(l["CodigoExterno"])
         if not det:
-            out.append({"codigo": l["CodigoExterno"], "nombre": l.get("Nombre"), "especialidades": esps, "estado_filtro": "sin_detalle"}); continue
+            out.append({"codigo": l["CodigoExterno"], "nombre": l.get("Nombre"), "especialidades": esps, "estado_filtro": "sin_detalle", "motivo_filtro": "la API no entregó el detalle tras 3 intentos: revisar manualmente"}); continue
         est, motivo, datos = capa2(det)
         pub = (datos.get("publicacion") or "")[:10]
         if pub and pub < desde.isoformat():
