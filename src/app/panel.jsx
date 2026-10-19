@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import ReporteDia from "./ReporteDia";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 const SUCURSALES = [
@@ -924,7 +925,7 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
 
       {/* Tabs módulo */}
       <div style={{display:"flex",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
-        {[["licitaciones","📋 Licitaciones",lics.length,null],["compras_agiles","⚡ Compras ágiles",casRegion.length,null],["seguimiento","🎯 Mis participaciones",misP_eval.length,null],["diagnostico","🔧 Diagnóstico",diagBadgeCount,"diag"]].map(([k,label,n,tipo])=>(
+        {[["reporte","📰 Reporte del día",0,null],["licitaciones","📋 Licitaciones",lics.length,null],["compras_agiles","⚡ Compras ágiles",casRegion.length,null],["seguimiento","🎯 Mis participaciones",misP_eval.length,null],["diagnostico","🔧 Diagnóstico",diagBadgeCount,"diag"]].map(([k,label,n,tipo])=>(
           <button key={k} onClick={()=>{cambiarModulo(k);if(k==="diagnostico")runDiagnostics();}} style={mBtn(modulo===k)}>
             {label} {n>0&&<span style={{fontSize:11,background:tipo==="diag"?"#FCEBEB":"var(--color-background-secondary)",color:tipo==="diag"?"#A32D2D":"var(--color-text-tertiary)",borderRadius:20,padding:"1px 7px",marginLeft:4,fontWeight:tipo==="diag"?600:400}}>{n}</span>}
           </button>
@@ -1108,6 +1109,9 @@ Si no hay problemas, confirma qué validaciones pasaron. Español directo.`;
             </div>
           </>
         )}
+
+        {/* ── REPORTE DEL DÍA (agente) ── */}
+        {modulo==="reporte"&&<ReporteDia/>}
 
         {/* ── MIS PARTICIPACIONES ── */}
         {modulo==="seguimiento"&&(
