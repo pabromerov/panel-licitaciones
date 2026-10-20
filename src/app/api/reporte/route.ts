@@ -24,6 +24,8 @@ export async function GET(req: NextRequest) {
 // ── Correo del reporte (Resend). Se envía solo si existen RESEND_API_KEY y REPORTE_EMAIL en Vercel.
 const fmtM = (n: unknown) => (n ? "$ " + Number(n).toLocaleString("es-CL") : "Ver bases");
 const fmtF = (s: unknown) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
+const fmtFH = (s: unknown) => { if (!s) return "No informada"; const t = String(s); const h = t.slice(11, 16); return fmtF(t) + (h && h !== "00:00" ? " " + h : ""); };
+const ventanaTxt = (v: any) => !v ? "" : v.desde === v.hasta ? `Publicadas el ${fmtF(v.desde)}` : `Publicadas entre ${fmtF(v.desde)} y ${fmtF(v.hasta)}`;
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 async function enviarCorreo(rep: any) {
@@ -35,11 +37,11 @@ async function enviarCorreo(rep: any) {
   const color: Record<string, string> = { SI: "#3B6D11", CONDICIONADO: "#854F0B", NO: "#A32D2D" };
   const filas = lics.map((l: any) => `<tr><td style="padding:8px;border-bottom:1px solid #eee;vertical-align:top"><b style="color:${color[l.recomendacion] || "#333"}">${esc(l.recomendacion)}</b></td>
     <td style="padding:8px;border-bottom:1px solid #eee"><a href="https://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idlicitacion=${esc(l.codigo)}">${esc(l.codigo)}</a><br><b>${esc(l.nombre)}</b><br><span style="color:#666">${esc(l.organismo)}</span><br>${esc(l.justificacion)}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;white-space:nowrap;vertical-align:top">${fmtM(l.monto)}<br>Cierre ${fmtF(l.cierre)}</td></tr>`).join("");
+    <td style="padding:8px;border-bottom:1px solid #eee;white-space:nowrap;vertical-align:top"><b>${fmtM(l.monto)}</b><br>Publicada: ${fmtF(l.publicacion)}<br>Preguntas hasta: ${fmtFH(l.preguntas_hasta)}<br>Cierre: ${fmtFH(l.cierre)}</td></tr>`).join("");
   const r = rep.resumen || {};
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">
     <h2 style="margin:0 0 4px">Licitaciones CMPV — ${fmtF(rep.fecha)}</h2>
-    <p style="margin:0 0 12px;color:#666">Publicadas entre ${fmtF(rep.ventana?.desde)} y ${fmtF(rep.ventana?.hasta)} · Revisadas ${r.revisadas ?? "—"} · Relevantes ${lics.length} · SÍ ${r.si ?? 0} · Condicionado ${r.condicionado ?? 0}</p>
+    <p style="margin:0 0 12px;color:#666">${ventanaTxt(rep.ventana)} · Revisadas ${r.revisadas ?? "—"} · Relevantes ${lics.length} · SÍ ${r.si ?? 0} · Condicionado ${r.condicionado ?? 0}</p>
     ${rep.nota ? `<p style="background:#E6F1FB;padding:8px;border-radius:6px">${esc(rep.nota)}</p>` : ""}
     ${lics.length ? `<table style="border-collapse:collapse;width:100%">${filas}</table>` : "<p>Sin licitaciones relevantes en esta ventana.</p>"}
     <p style="margin-top:16px"><a href="https://panel-licitaciones.vercel.app">Abrir el panel → pestaña "Reporte del día"</a></p></div>`;

@@ -11,6 +11,8 @@ const fmt  = n => n ? "$ " + Number(n).toLocaleString("es-CL") : "Ver bases";
 const fmtD = s => s ? (s.split("T")[0] || "").split("-").reverse().join("/") : "—";
 const diasA = f => { if (!f) return null; const c = new Date(f); const h = new Date();
   return Math.round((new Date(c.getFullYear(),c.getMonth(),c.getDate()) - new Date(h.getFullYear(),h.getMonth(),h.getDate())) / 86400000); };
+const fmtFH = s => { if (!s) return "No informada"; const h = String(s).slice(11,16); return fmtD(s) + (h && h !== "00:00" ? " " + h : ""); };
+const ventanaTxt = v => !v ? "" : v.desde === v.hasta ? `Publicadas el ${fmtD(v.desde)}` : `Publicadas entre ${fmtD(v.desde)} y ${fmtD(v.hasta)}`;
 const ficha = c => `https://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idlicitacion=${c}`;
 
 export default function ReporteDia() {
@@ -41,7 +43,7 @@ export default function ReporteDia() {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
         <div>
           <div style={{fontSize:14,fontWeight:600}}>Reporte del {fmtD(rep.fecha)} · Centro Médico Pedro de Valdivia</div>
-          <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:2}}>Publicadas entre {fmtD(rep.ventana?.desde)} y {fmtD(rep.ventana?.hasta)} · generado {rep.generado ? new Date(rep.generado).toLocaleString("es-CL") : "—"}</div>
+          <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:2}}>{ventanaTxt(rep.ventana)} · generado {rep.generado ? new Date(rep.generado).toLocaleString("es-CL") : "—"}</div>
         </div>
         <select value={fecha} onChange={e=>setFecha(e.target.value)} style={{fontSize:12,padding:"5px 8px",borderRadius:8,border:"0.5px solid var(--color-border-secondary)"}}>
           <option value="">Último reporte</option>
@@ -80,8 +82,11 @@ export default function ReporteDia() {
               </div>
               <div style={{textAlign:"right",minWidth:120}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#185FA5"}}>{fmt(l.monto)}</div>
-                <div style={{fontSize:11,fontWeight:d!==null&&d<=5?600:400,color:d!==null&&d<=5?"#A32D2D":"var(--color-text-tertiary)"}}>{d===null?"":d<0?"Cerrada":d===0?"Cierra hoy":`Cierra en ${d}d`} · {fmtD(l.cierre)}</div>
-                {l.preguntas_hasta && <div style={{fontSize:10,color:"var(--color-text-tertiary)"}}>Preguntas hasta {fmtD(l.preguntas_hasta)}</div>}
+                <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6,marginTop:2}}>
+                  <div>Publicada: {fmtD(l.publicacion)}</div>
+                  <div>Preguntas hasta: {fmtFH(l.preguntas_hasta)}</div>
+                  <div style={{fontWeight:d!==null&&d<=5?600:400,color:d!==null&&d<=5?"#A32D2D":"inherit"}}>Cierre: {fmtFH(l.cierre)}{d===null?"":d<0?" (cerrada)":d===0?" (hoy)":` (${d}d)`}</div>
+                </div>
                 <a href={ficha(l.codigo)} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#185FA5"}}>{l.codigo} ↗</a>
               </div>
             </div>

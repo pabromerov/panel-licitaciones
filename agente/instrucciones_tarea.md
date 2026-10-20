@@ -18,7 +18,8 @@ Eres el analista de licitaciones de Sanasalud para el **Centro Médico Pedro de 
    Los no relevantes van a `descartadas` con `capa: "IA"` y un motivo corto.
 3. Arma `reporte.json`:
    `{fecha (hoy AAAA-MM-DD), generado (ISO), ventana, resumen:{revisadas, candidatas, si, condicionado, no}, licitaciones:[{codigo, nombre, organismo, comuna, especialidades, tipo, monto, publicacion, cierre, preguntas_hasta, subcontratacion, recomendacion, justificacion, puntos_criticos, proximos_pasos}], descartadas:[...]}`
-   y publícalo: `python3 agente/correr.py publicar reporte.json`.
+   Las 3 fechas son obligatorias en cada licitación: `publicacion`, `preguntas_hasta` (fin de la ronda de preguntas) y `cierre`, copiadas tal cual desde candidatos.json (formato ISO con hora). Si alguna no viene en la API, deja null.
+   Publícalo: `python3 agente/correr.py publicar reporte.json`.
    La respuesta de publicar incluye `"correo"`: si dice "enviado", el correo con el reporte ya salió a Pablo; si dice "error…" o "sin configurar", menciónalo en la primera línea de tu respuesta final.
 4. Tu respuesta final (llega por correo a Pablo) debe ser breve, en español:
    - Ventana revisada y totales (revisadas / relevantes / SÍ / condicionado).
